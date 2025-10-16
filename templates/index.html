@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>d'Avallka</title>
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -42,9 +43,23 @@
             border-bottom: 1px solid #333333;
         }
         
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        
+        .logo {
+            height: 60px;
+            width: auto;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        
         .header h1 {
             font-size: 2.2em;
-            margin-bottom: 5px;
+            margin: 0;
             font-weight: 600;
             background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
             -webkit-background-clip: text;
@@ -478,7 +493,10 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📁 d'Avallka</h1>
+            <div class="logo-container">
+                <img src="/static/images/davallka.png" alt="d'Avallka logo" class="logo">
+                <h1>d'Avallka</h1>
+            </div>
             <p>Upload, download, and share your files easily</p>
             {% if current_user.is_authenticated %}
                 <div class="user-info">

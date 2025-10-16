@@ -1,13 +1,13 @@
 ## 🧩 d'Avallka
 
 <p align="center">
-  <img src="/images/davallka.png" alt="d'avallka logo" width="160"/>
+  <img src="images/davallka.png" alt="d'Avallka logo" width="160"/>
 </p>
 
-**d'Avallka** is a simple, lightweight file-sharing service built for developers.  
-It lets authenticated users upload files — and instantly makes them available to everyone through direct web links.
+**d'Avallka** is a cheeky yet practical file-sharing service for developers who value simplicity over protection layers.  
+It lets authenticated users upload files — and instantly makes them available to everyone through clean, direct links.
 
-Perfect for hosting demo assets, test data, or any content your web apps need to access publicly without the hassle of renaming or complex permissions.
+Whether you're sharing demo assets, test data, or just something you want your teammates to "get" — d'Avallka makes giving easy.
 
 ### ✨ Key Features
 - **Authenticated uploads** – only registered users can upload files  
@@ -178,28 +178,3 @@ Check the logs:
 docker-compose logs filestorage
 ```
 
-## Development
-
-### Project Structure
-```
-davallka/
-├── app.py              # Main Flask application
-├── requirements.txt    # Python dependencies
-├── Dockerfile         # Docker configuration
-├── docker-compose.yml # Docker Compose configuration
-├── templates/         # HTML templates
-│   └── index.html    # Main web interface
-├── uploads/          # File storage directory (created automatically)
-└── README.md         # This file
-```
-
-### Adding Features
-The application is built with Flask and uses a simple file-based storage system. You can easily extend it by:
-- Adding user authentication
-- Implementing file categories
-- Adding file search functionality
-- Integrating with cloud storage services
-
-## License
-
-This project is open source and available under the MIT License.
