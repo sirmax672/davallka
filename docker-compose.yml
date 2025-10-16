@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  davallka:
+    build: .
+    ports:
+      - "${PORT:-80}:${PORT:-80}"
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - FLASK_ENV=production
+      - PORT=${PORT:-80}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password123}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-your-secret-key-change-this}
+    restart: unless-stopped
+    container_name: davallka
