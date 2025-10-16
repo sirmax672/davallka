@@ -475,7 +475,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 20px;
         }
         
         .file-input-wrapper {
@@ -506,30 +505,6 @@
             cursor: pointer;
         }
         
-        .upload-btn {
-            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .upload-btn:hover {
-            background: linear-gradient(135deg, #0099cc 0%, #007aa3 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
-        }
-        
-        .upload-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
         
         .files-section h2 {
             color: #ffffff;
@@ -826,7 +801,6 @@
                             <input type="file" name="file" id="fileInput" class="file-input" required>
                             <span id="fileInputLabel">Choose File or Drag & Drop</span>
                         </div>
-                        <button type="submit" class="upload-btn" id="uploadBtn">Upload File</button>
                     </form>
                     
                     <div class="drag-overlay" id="dragOverlay">
@@ -982,20 +956,28 @@
     </div>
 
     <script>
-        // File input label update
+        // File input change handler - auto-upload when file is selected
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const label = document.getElementById('fileInputLabel');
+            const loading = document.getElementById('loading');
+            
             if (e.target.files.length > 0) {
-                label.textContent = e.target.files[0].name;
+                // Update label to show selected file
+                label.textContent = `Uploading ${e.target.files[0].name}...`;
+                
+                // Show loading indicator
+                loading.style.display = 'block';
+                
+                // Auto-submit the form
+                document.getElementById('uploadForm').submit();
             } else {
                 label.textContent = 'Choose File or Drag & Drop';
             }
         });
         
-        // Form submission with loading state
+        // Form submission handler
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             const fileInput = document.getElementById('fileInput');
-            const uploadBtn = document.getElementById('uploadBtn');
             const loading = document.getElementById('loading');
             
             if (fileInput.files.length === 0) {
@@ -1004,8 +986,7 @@
                 return;
             }
             
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Uploading...';
+            // Show loading state
             loading.style.display = 'block';
         });
         
@@ -1054,7 +1035,13 @@
             if (files.length > 0) {
                 fileInput.files = files;
                 const label = document.getElementById('fileInputLabel');
-                label.textContent = files[0].name;
+                const loading = document.getElementById('loading');
+                
+                // Update label to show uploading status
+                label.textContent = `Uploading ${files[0].name}...`;
+                
+                // Show loading indicator
+                loading.style.display = 'block';
                 
                 // Auto-submit the form
                 document.getElementById('uploadForm').submit();
