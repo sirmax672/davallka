@@ -28,3 +28,12 @@ coverage.xml
 
 uploads/*
 !uploads/.gitkeep
+.env
+.env.*
+.venv
+.venv-*
+state
+docs
+*.sqlite3*
+*.tar
+*.tgz

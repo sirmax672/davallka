@@ -60,6 +60,9 @@ logs/
 # Uploads (keep the directory but ignore files)
 uploads/*
 !uploads/.gitkeep
+state/
+.venv-*/
+*.sqlite3*
 
 # Temporary files
 *.tmp

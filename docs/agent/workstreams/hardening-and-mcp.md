@@ -3,12 +3,12 @@
 ## Scope and resume state
 
 - Reviewed application baseline: `05871c7daa5ea65f336e2a489f2fc00d92802b63` (`master`).
-- Documentation-only assessment. No application behavior has changed; no MCP server exists yet.
-- Development worktree: primary checkout; no separate branch or PR.
-- Resume from the documentation commit containing this card; the application baseline above remains unchanged.
+- Implemented: storage boundary, fail-closed sessions, identity validation, CSRF, attachment policy, rate-limited login, scoped API, transactional catalog and official-SDK stdio MCP.
+- Development branch: `codex/image-mcp`, primary checkout; no PR.
+- Resume from the implementation commit containing this card. The baseline above identifies the application before remediation.
 - Deployment observations and runbooks are deliberately excluded from this public card.
 
-## Code findings
+## Assessment findings at the reviewed baseline
 
 | Priority | Finding | Direction |
 | --- | --- | --- |
@@ -83,6 +83,15 @@ Use an official supported SDK and call the management API; do not automate the l
 - [MCP server development](https://modelcontextprotocol.io/docs/develop/build-server)
 - [MCP security practices](https://modelcontextprotocol.io/specification/latest/basic/security_best_practices)
 
+## Implemented contract and validation
+
+- Legacy files are cataloged without touching bytes, ownership or paths; the runtime legacy mount can be read-only. New immutable blobs and SQLite WAL state live separately.
+- Names and canonical paths are separate. Browser rename preserves old aliases; API rename changes metadata only. Deletion is recoverable with no automatic purge. Every API mutation checks the expected version.
+- Eight MCP tools are implemented through the official SDK 2.3.0 stdio transport and scoped API credentials. Base64 upload is capped at 10 MiB; multipart API handles larger files. No arbitrary local paths or URL fetching.
+- Production packaging uses pinned dependencies/base image, Waitress, UID 10001, healthcheck, read-only root filesystem and bounded resources.
+- 26 Windows tests pass, including actual stdio transport, legacy-byte preservation, symlinks where available, concurrent idempotency, credentials/CSRF, scope denial, aliases, soft delete and restore. Dependency audit reports no known vulnerabilities.
+- Operational verification is tracked privately; no deployment details belong here.
+
 ## Next action
 
-Implement the security boundary first, with regression tests. Resolve alias, retention and transport defaults before building the management API and MCP adapter. Keep operational rollout details outside this repository.
+Complete Linux/container and isolated release verification. Track deployment and recovery in private operations memory. Future work: explicit purge/retention design and remote HTTP MCP authorization if requested.

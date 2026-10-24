@@ -762,7 +762,10 @@
             {% if current_user.is_authenticated %}
                 <div class="user-info">
                     <span>Welcome, {{ current_user.id }}!</span>
-                    <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+                    <form action="{{ url_for('logout') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="logout-btn" type="submit">Logout</button>
+                    </form>
                 </div>
             {% endif %}
         </div>
@@ -796,6 +799,7 @@
             {% if current_user.is_authenticated %}
                 <div class="upload-section" id="uploadSection">
                     <form class="upload-form" action="/upload" method="post" enctype="multipart/form-data" id="uploadForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="current_path" value="{{ current_path }}">
                         <div class="file-input-wrapper">
                             <input type="file" name="file" id="fileInput" class="file-input" required>
@@ -838,7 +842,7 @@
                         <div class="files-list">
                             <!-- Folders first -->
                             {% for folder in folders %}
-                                <div class="file-item folder-item" onclick="openFolder('{{ url_for('index', folder_path=folder.path) }}')">
+                                <div class="file-item folder-item" data-url="{{ url_for('index', folder_path=folder.path) }}" onclick="openFolder(this.dataset.url)">
                                     <div class="file-main">
                                         <div class="file-icon">📂</div>
                                         <div class="file-details">
@@ -848,10 +852,11 @@
                                     </div>
                                     <div class="file-actions" onclick="event.stopPropagation()">
                                         <a href="{{ url_for('index', folder_path=folder.path) }}" class="btn btn-view">📂 Open</a>
-                                        <button class="btn btn-rename" onclick="openRenameModal('{{ folder.path }}', '{{ folder.name }}', 'folder')">✏️ Rename</button>
-                                        <form method="post" action="/delete/{{ folder.path }}" style="display: inline;">
+                                        <button class="btn btn-rename" data-path="{{ folder.path }}" data-name="{{ folder.name }}" onclick="openRenameModal(this.dataset.path, this.dataset.name, 'folder', 0)">✏️ Rename</button>
+                                        <form method="post" action="{{ url_for('delete_file', file_path=folder.path) }}" style="display: inline;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <input type="hidden" name="current_path" value="{{ current_path }}">
-                                            <button type="submit" class="btn btn-delete" onclick="return confirm('Are you sure you want to delete folder {{ folder.name }}?')">🗑️ Delete</button>
+                                            <button type="submit" class="btn btn-delete" onclick="return confirm('Delete this empty folder?')">🗑️ Delete</button>
                                         </form>
                                     </div>
                                 </div>
@@ -869,15 +874,17 @@
                                     </div>
                                     <div class="file-actions">
                                         {% if file.is_image %}
-                                            <a href="/view/{{ file.relative_path }}" class="btn btn-view" target="_blank">👁️ View</a>
+                                            <a href="{{ url_for('view_file', file_path=file.relative_path) }}" class="btn btn-view" target="_blank" rel="noopener">👁️ View</a>
                                         {% endif %}
-                                        <a href="/download/{{ file.relative_path }}" class="btn btn-download">📥 Download</a>
-                                        <button class="btn btn-copy" onclick="copyFileUrl('{{ file.relative_path }}', {{ file.is_image|lower }})">📋 Copy URL</button>
+                                        <a href="{{ url_for('download_file', file_path=file.relative_path) }}" class="btn btn-download">📥 Download</a>
+                                        <button class="btn btn-copy" data-path="{{ file.relative_path }}" data-image="{{ file.is_image|lower }}" onclick="copyFileUrl(this.dataset.path, this.dataset.image === 'true')">📋 Copy URL</button>
                                         {% if current_user.is_authenticated %}
-                                            <button class="btn btn-rename" onclick="openRenameModal('{{ file.relative_path }}', '{{ file.name }}', 'file')">✏️ Rename</button>
-                                            <form method="post" action="/delete/{{ file.relative_path }}" style="display: inline;">
+                                            <button class="btn btn-rename" data-path="{{ file.relative_path }}" data-name="{{ file.name }}" data-version="{{ file.version }}" onclick="openRenameModal(this.dataset.path, this.dataset.name, 'file', this.dataset.version)">✏️ Rename</button>
+                                            <form method="post" action="{{ url_for('delete_file', file_path=file.relative_path) }}" style="display: inline;">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="version" value="{{ file.version }}">
                                                 <input type="hidden" name="current_path" value="{{ current_path }}">
-                                                <button type="submit" class="btn btn-delete" onclick="return confirm('Are you sure you want to delete {{ file.name }}?')">🗑️ Delete</button>
+                                                <button type="submit" class="btn btn-delete" onclick="return confirm('Delete this file? It can be restored through the API or MCP.')">🗑️ Delete</button>
                                             </form>
                                         {% endif %}
                                     </div>
@@ -921,6 +928,7 @@
                 <span class="close" onclick="closeCreateFolderModal()">&times;</span>
             </div>
             <form action="/create_folder" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="current_path" value="{{ current_path }}">
                 <div class="modal-body">
                     <label for="folderName">Folder Name:</label>
@@ -942,6 +950,8 @@
                 <span class="close" onclick="closeRenameModal()">&times;</span>
             </div>
             <form id="renameForm" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="version" id="renameVersion" value="">
                 <input type="hidden" name="current_path" value="{{ current_path }}">
                 <div class="modal-body">
                     <label for="newName">New Name:</label>
@@ -956,6 +966,7 @@
     </div>
 
     <script>
+        {% if current_user.is_authenticated %}
         // File input change handler - auto-upload when file is selected
         document.getElementById('fileInput').addEventListener('change', function(e) {
             const label = document.getElementById('fileInputLabel');
@@ -1048,10 +1059,12 @@
             }
         }
         
+        {% endif %}
         // Copy file URL to clipboard
         function copyFileUrl(filename, isImage) {
             const baseUrl = window.location.origin;
-            const url = isImage ? `${baseUrl}/view/${filename}` : `${baseUrl}/download/${filename}`;
+            const path = filename.split('/').map(encodeURIComponent).join('/');
+            const url = isImage ? `${baseUrl}/view/${path}` : `${baseUrl}/download/${path}`;
             
             // Use the modern Clipboard API if available
             if (navigator.clipboard && window.isSecureContext) {
@@ -1182,10 +1195,11 @@
             document.getElementById('folderName').value = '';
         }
 
-        function openRenameModal(itemPath, currentName, type) {
+        function openRenameModal(itemPath, currentName, type, version) {
             document.getElementById('renameModal').style.display = 'block';
             document.getElementById('renameModalTitle').textContent = `✏️ Rename ${type === 'folder' ? 'Folder' : 'File'}`;
-            document.getElementById('renameForm').action = `/rename/${itemPath}`;
+            document.getElementById('renameForm').action = `/rename/${itemPath.split('/').map(encodeURIComponent).join('/')}`;
+            document.getElementById('renameVersion').value = version;
             document.getElementById('newName').value = currentName;
             document.getElementById('newName').focus();
             document.getElementById('newName').select();

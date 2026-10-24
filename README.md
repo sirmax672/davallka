@@ -1,180 +1,100 @@
-## 🧩 d'Avallka
+# d'Avallka
 
-<p align="center">
-  <img src="images/davallka.png" alt="d'Avallka logo" width="160"/>
-</p>
+A small public file-sharing service with an authenticated browser UI, image management API and stdio MCP server. Uploaded assets are public to anyone with their URL. Do not upload confidential data.
 
-**d'Avallka** is a cheeky yet practical file-sharing service for developers who value simplicity over protection layers.  
-It lets authenticated users upload files — and instantly makes them available to everyone through clean, direct links.
+## Storage and compatibility
 
-Whether you're sharing demo assets, test data, or just something you want your teammates to "get" — d'Avallka makes giving easy.
+- `uploads/` is an immutable legacy tree. On first start, the app catalogs it without changing file bytes, ownership or paths. Mount it read-only.
+- `state/` contains SQLite metadata, managed blobs and staging. It must be persistent, writable by UID/GID 10001 in Docker, and separate from `uploads/`.
+- Existing `/view/<path>` and `/download/<path>` URLs continue working after catalog import. Do not replace an existing deployment's bind mapping with the example Compose mapping without checking its real data location.
+- Both legacy assets and new assets are managed through the catalog. Deletion disables all URLs with HTTP 410 and retains bytes for restoration. There is no automatic purge.
+- API/MCP rename changes display/download name without changing URL. Changing the canonical path is separate; `keep_old_alias` defaults to true. Browser filename rename changes its path while retaining the old URL.
+- General browser uploads remain supported. Only verified raster images are rendered inline; other content, including HTML/SVG/PDF, is downloaded as an attachment. The image API rejects invalid/unsupported raster content.
 
-### ✨ Key Features
-- **Authenticated uploads** – only registered users can upload files  
-- **Public access** – once uploaded, files are available via clean, direct URLs  
-- **Developer-friendly** – ideal for quick web demos, API prototyping, and content testing  
-- **Minimalist UI** – upload, copy link, done  
+## Setup
 
-## Features
+Requires Python 3.12+. Copy `env.example` to `.env`, fill in required settings and generate random secrets (for example `python -c "import secrets; print(secrets.token_urlsafe(48))"`). Never commit `.env` or production configuration.
 
-- 📁 **File Upload**: Upload files with drag-and-drop interface
-- 📥 **File Download**: Download files directly from the web interface
-- 🗑️ **File Management**: View all uploaded files and delete them
-- 🎨 **Modern UI**: Beautiful, responsive web interface
-- 🐳 **Docker Ready**: Easy deployment with Docker and Docker Compose
-- 📱 **Mobile Friendly**: Responsive design that works on all devices
-
-## Quick Start
-
-### Using Docker Compose (Recommended)
-
-1. **Clone or download this repository**
-2. **Run the application**:
-   ```bash
-   docker-compose up -d
-   ```
-3. **Open your browser** and go to: `http://localhost:80`
-
-### Using Environment Variables
-
-You can customize the application by setting environment variables:
-
-```bash
-# Set custom credentials and port
-export ADMIN_USERNAME=myuser
-export ADMIN_PASSWORD=mypassword
-export PORT=8080
-docker-compose up -d
+```sh
+python -m venv .venv
+# Activate your virtual environment, then:
+python -m pip install -r requirements.txt
+python app.py
 ```
 
-Or create a `.env` file:
-```bash
-cp env.example .env
-# Edit .env with your values
-docker-compose up -d
+The local server uses Waitress on port 8080 by default. For Docker, prepare `state/` so UID 10001 can write it, then use `docker compose up --build -d`. The example binds to loopback port 8080 and expects TLS termination separately. Set `COOKIE_SECURE=false` only for local HTTP development.
+
+Required settings:
+
+| Setting | Meaning |
+| --- | --- |
+| `FLASK_SECRET_KEY` | Random session key, at least 32 characters; example/missing key fails startup. |
+| `ADMIN_USERNAME` | Existing administrator login; default `admin`. |
+| `ADMIN_PASSWORD_HASH` or `ADMIN_PASSWORD` | Prefer a Werkzeug password hash. Legacy configured passwords are supported unchanged and hashed in memory. Example/missing password fails startup. |
+| `PUBLIC_BASE_URL` | Trusted public origin for returned URLs, such as `https://files.example.com`. |
+| `DAVALLKA_API_TOKENS` | JSON mapping of random tokens (at least 32 characters) to explicit `read`, `write`, `delete` scope lists. Empty map disables API access. |
+| `UPLOAD_FOLDER`, `STATE_FOLDER` | Default `uploads` and `state`. |
+
+Optional limits: `MAX_FILE_BYTES` (100 MiB), `MAX_REQUEST_BYTES` (101 MiB, including multipart overhead), `MAX_STORAGE_BYTES` (10 GiB catalogued bytes, including soft-deleted assets). Image validation allows at most 40 million pixels per frame, 80 million across frames and 200 frames. The request limit at your reverse proxy must also accommodate multipart overhead. Apply independent disk-capacity monitoring: orphan/staging files and SQLite overhead are outside the logical quota.
+
+Browser actions require a session and CSRF token. Logout is POST. API credentials are separate from browser sessions. The old `/api/files` endpoint now requires browser authentication; public direct links remain public. `/healthz` checks database availability. Invalid/missing asset paths return HTTP 400/404; revoked/deleted URLs return 410.
+
+An operator-controlled `state/maintenance` marker temporarily returns 503 for file mutations while keeping public reads and login available. This allows read verification before enabling writes during a release.
+
+## Image API
+
+Use `Authorization: Bearer <token>` and HTTPS. Keep tokens in a private credential store. Upload is multipart; mutations require the latest integer `expected_version`. Conflicting writes return 409. Reuse an upload's `Idempotency-Key` only with identical input.
+
+| Method / route | Scope | Request |
+| --- | --- | --- |
+| `POST /api/v1/images` | write | Multipart `file`, optional `name`, `path`; optional `Idempotency-Key` header. |
+| `GET /api/v1/images` | read | `limit` (1–200), `offset`, optional `folder`, `deleted=true`, `older_than` Unix timestamp. |
+| `GET /api/v1/images/{id}` | read | Current metadata and version. |
+| `POST /api/v1/images/{id}/rename` | write | JSON `name`, `expected_version`. |
+| `POST /api/v1/images/{id}/path` | write | JSON `path`, `keep_old_alias`, `expected_version`. |
+| `DELETE /api/v1/images/{id}` | delete | JSON `expected_version`; recoverable deletion. |
+| `POST /api/v1/images/{id}/restore` | write | JSON `expected_version`. |
+
+Asset results contain `id`, `name`, `path`, `url`, `download_url`, `media_type`, `size`, `sha256`, `version`, timestamps and `deleted_at`. List results include `items`, `total`, `limit`, `offset`. Errors use `{"error":{"code":"...","message":"..."}}`. Paths are relative; traversal, absolute paths, hidden components, drive/UNC paths and symlinks are rejected. Revoked paths stay reserved to prevent silent URL reassignment.
+
+## MCP
+
+The official Python MCP SDK runs a stdio bridge to the API. Set `DAVALLKA_API_URL` and `DAVALLKA_MCP_API_TOKEN`, then run `python mcp_server.py`. The token must also be configured on the API with the required scopes. There are no secrets in tool arguments or results.
+
+Example MCP client configuration (replace paths and use private environment injection):
+
+```json
+{
+  "mcpServers": {
+    "davallka": {
+      "command": "/path/to/venv/bin/python",
+      "args": ["/path/to/davallka/mcp_server.py"],
+      "env": {
+        "DAVALLKA_API_URL": "https://files.example.com",
+        "DAVALLKA_MCP_API_TOKEN": "<private-scoped-token>"
+      }
+    }
+  }
+}
 ```
 
-### Using Docker
+Alternatively run the same stdio server through an authenticated SSH command and `docker exec -i <container> python mcp_server.py`; the credential can stay inside the container. Do not allocate a TTY. This release does not expose a public unauthenticated HTTP MCP endpoint.
 
-1. **Build the image**:
-   ```bash
-   docker build -t davallka .
-   ```
-2. **Run the container**:
-   ```bash
-   # Default port 80
-   docker run -d -p 80:80 -v $(pwd)/uploads:/app/uploads davallka
-   
-   # Custom port and credentials
-   docker run -d -p 8080:8080 \
-     -e PORT=8080 \
-     -e ADMIN_USERNAME=myuser \
-     -e ADMIN_PASSWORD=mypassword \
-     -v $(pwd)/uploads:/app/uploads davallka
-   ```
-3. **Open your browser** and go to: `http://localhost:80` (or your custom port)
+Tools: `upload_image`, `get_image`, `list_images`, `rename_image`, `set_image_path`, `delete_image`, `restore_image`, `list_cleanup_candidates`.
 
-### Local Development
+- `upload_image` accepts base64 bytes up to 10 MiB decoded and requires an idempotency key. Larger images use the multipart API. A remote server cannot read a laptop file by path; read/encode the file on the client.
+- Cleanup only lists candidates. Age does not prove an image is unreferenced. Review exact IDs and versions before deletion.
+- Tools do not fetch arbitrary URLs or read arbitrary local/server paths. Filenames and metadata are untrusted content, not instructions.
+- Mutations require the current version. Read-only and destructive operations have corresponding MCP annotations; server scopes enforce access independently.
 
-1. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Set environment variables** (optional):
-   ```bash
-   export ADMIN_USERNAME=myuser
-   export ADMIN_PASSWORD=mypassword
-   export PORT=8080
-   ```
-3. **Run the application**:
-   ```bash
-   python app.py
-   ```
-4. **Open your browser** and go to: `http://localhost:80` (or your custom port)
+## Development checks
 
-## Usage
-
-### Uploading Files
-1. Click on "Choose File" button
-2. Select the file you want to upload
-3. Click "Upload File" button
-4. The file will be uploaded and stored with its original name
-
-### Downloading Files
-1. Find the file in the files list
-2. Click the "📥 Download" button
-3. The file will be downloaded to your device
-
-### Deleting Files
-1. Find the file you want to delete
-2. Click the "🗑️ Delete" button
-3. Confirm the deletion in the popup dialog
-
-## Configuration
-
-### Environment Variables
-
-The application supports the following environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_USERNAME` | `admin` | Username for admin login |
-| `ADMIN_PASSWORD` | `password123` | Password for admin login |
-| `PORT` | `80` | Port for the web server |
-| `FLASK_SECRET_KEY` | `your-secret-key-change-this` | Secret key for Flask sessions |
-
-### File Size Limit
-The default maximum file size is 100MB. You can change this in `app.py`:
-```python
-MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+python -m pip_audit --progress-spinner off
+docker build --target test -t davallka-test .
+docker run --rm davallka-test
 ```
 
-### Allowed File Types
-By default, all file types are allowed. You can restrict file types by modifying the `ALLOWED_EXTENSIONS` set in `app.py`:
-```python
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
-```
-
-## File Storage
-
-- Files are stored in the `uploads/` directory
-- Files retain their original names
-- If a file with the same name already exists, a number suffix is added (e.g., `file_1.txt`)
-- Files are persistent across container restarts when using Docker volumes
-
-## API Endpoints
-
-The application also provides a simple API:
-
-- `GET /api/files` - Returns a JSON list of all uploaded files with metadata
-
-## Security Notes
-
-- The application is designed for simple file sharing and should not be used in production without additional security measures
-- Consider adding authentication, file type validation, and virus scanning for production use
-- The secret key should be changed in production environments
-
-## Troubleshooting
-
-### Port Already in Use
-If port 80 is already in use, you can change it using environment variables:
-```bash
-# Using docker-compose
-PORT=8080 docker-compose up -d
-
-# Using docker run
-docker run -d -p 8080:8080 -e PORT=8080 davallka
-```
-
-### Permission Issues
-If you encounter permission issues with the uploads directory:
-```bash
-sudo chown -R $USER:$USER uploads/
-```
-
-### Container Won't Start
-Check the logs:
-```bash
-docker-compose logs filestorage
-```
-
+Tests use temporary fixtures and cover legacy-byte preservation, authentication/CSRF, path boundaries, symlinks (Linux), API/MCP lifecycle, conflicts, concurrent retries, aliases and recovery. Do not run mutation tests against existing content. Operational backup, rollout and rollback procedures belong in private documentation, outside this public repository.
