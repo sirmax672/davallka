@@ -8,7 +8,7 @@ Deliver hardened file sharing, an authenticated image API and stdio MCP while pr
 
 Implementation is complete. The service uses a transactional catalog over read-only legacy assets and separate managed blobs. Existing configured administrator credentials remain supported; unsafe session secrets fail startup. API/MCP support upload, metadata rename, URL changes with aliases, recoverable deletion and restoration.
 
-Windows validation: 26 tests pass, including a real stdio subprocess and API/MCP lifecycle. The Linux container suite and an isolated restored-data candidate also pass. Python dependency audit has no known findings. Final release verification is tracked privately.
+Windows validation: 26 tests pass, including a real stdio subprocess and API/MCP lifecycle. The Linux container suite and an isolated restored-data candidate also pass. Python dependency audit has no known findings. Release verification is complete; operational details and recovery state are tracked privately.
 
 ## Constraints
 

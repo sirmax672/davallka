@@ -4,8 +4,8 @@
 
 - Reviewed application baseline: `05871c7daa5ea65f336e2a489f2fc00d92802b63` (`master`).
 - Implemented: storage boundary, fail-closed sessions, identity validation, CSRF, attachment policy, rate-limited login, scoped API, transactional catalog and official-SDK stdio MCP.
-- Development branch: `codex/image-mcp`, primary checkout; no PR.
-- Resume from the implementation commit containing this card. The baseline above identifies the application before remediation.
+- Implementation commit: `9a45dcf9b4c1e9fb85be3a2f677c5f6ffd7d48b1`, merged to `master`; primary checkout; no PR.
+- Exact implementation resume commit: `9a45dcf9b4c1e9fb85be3a2f677c5f6ffd7d48b1`. Later handover-only commits do not change runtime code.
 - Deployment observations and runbooks are deliberately excluded from this public card.
 
 ## Assessment findings at the reviewed baseline
@@ -89,9 +89,9 @@ Use an official supported SDK and call the management API; do not automate the l
 - Names and canonical paths are separate. Browser rename preserves old aliases; API rename changes metadata only. Deletion is recoverable with no automatic purge. Every API mutation checks the expected version.
 - Eight MCP tools are implemented through the official SDK 2.3.0 stdio transport and scoped API credentials. Base64 upload is capped at 10 MiB; multipart API handles larger files. No arbitrary local paths or URL fetching.
 - Production packaging uses pinned dependencies/base image, Waitress, UID 10001, healthcheck, read-only root filesystem and bounded resources.
-- 26 Windows tests pass, including actual stdio transport, legacy-byte preservation, symlinks where available, concurrent idempotency, credentials/CSRF, scope denial, aliases, soft delete and restore. Dependency audit reports no known vulnerabilities.
+- 26 Windows and Linux tests pass, including actual stdio transport, legacy-byte preservation, symlinks where available, concurrent idempotency, credentials/CSRF, scope denial, aliases, soft delete and restore. Dependency audit reports no known vulnerabilities.
 - Operational verification is tracked privately; no deployment details belong here.
 
 ## Next action
 
-Complete Linux/container and isolated release verification. Track deployment and recovery in private operations memory. Future work: explicit purge/retention design and remote HTTP MCP authorization if requested.
+Implementation and release verification are complete. Resume future development from the implementation commit above and keep operational details private. Future work: explicit purge/retention design, conservative orphan reconciliation and remote HTTP MCP authorization if requested.
