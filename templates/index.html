@@ -127,6 +127,22 @@
             border-style: solid;
         }
 
+        .mcp-connection {
+            background: #171f24;
+            border: 1px solid #31505d;
+            border-radius: 12px;
+            padding: 22px;
+            margin: 0 0 30px;
+            color: #eaf5f8;
+        }
+
+        .mcp-connection h3 { margin: 0 0 8px; color: #fff; }
+        .mcp-connection p, .mcp-connection li { color: #c6d2d7; line-height: 1.55; }
+        .mcp-endpoint { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+        .mcp-endpoint code { color: #80e6ff; overflow-wrap: anywhere; }
+        .mcp-copy { border: 0; border-radius: 7px; padding: 8px 13px; background: #087fa0; color: #fff; cursor: pointer; }
+        .mcp-connection ol { margin-bottom: 0; }
+
         .breadcrumb {
             background: #1a1a1a;
             border: 1px solid #333333;
@@ -822,6 +838,20 @@
                         📂 Create Folder
                     </button>
                 </div>
+
+                <section class="mcp-connection" aria-labelledby="mcpHeading">
+                    <h3 id="mcpHeading">Connect Codex or ChatGPT</h3>
+                    <p>Add this Streamable HTTP address in your MCP client. On first connection, d'Avallka will open a sign-in and approval page.</p>
+                    <div class="mcp-endpoint">
+                        <code id="mcpEndpoint">{{ mcp_endpoint }}</code>
+                        <button type="button" class="mcp-copy" onclick="copyMcpEndpoint()">Copy address</button>
+                    </div>
+                    <ol>
+                        <li><strong>Codex:</strong> Settings → MCP Servers → Add server → Streamable HTTP; paste the address.</li>
+                        <li><strong>ChatGPT:</strong> Plugins → Add custom MCP server; paste the address and choose OAuth.</li>
+                    </ol>
+                    <p>Approval grants image viewing, upload, rename, URL changes, soft-delete and restore. Deleted images remain recoverable.</p>
+                </section>
             {% else %}
                 <div class="login-prompt">
                     <div class="login-prompt-content">
@@ -966,6 +996,11 @@
     </div>
 
     <script>
+        function copyMcpEndpoint() {
+            const endpoint = document.getElementById('mcpEndpoint');
+            if (endpoint) navigator.clipboard.writeText(endpoint.textContent.trim());
+        }
+
         {% if current_user.is_authenticated %}
         // File input change handler - auto-upload when file is selected
         document.getElementById('fileInput').addEventListener('change', function(e) {

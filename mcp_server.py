@@ -12,14 +12,14 @@ from mcp.server import MCPServer
 from mcp_types import ToolAnnotations
 
 
-def create_mcp(api_url=None, api_token=None, transport=None):
+def create_mcp(api_url=None, api_token=None, transport=None, server=None):
     api_url = (api_url or os.getenv("DAVALLKA_API_URL", "http://127.0.0.1:80")).rstrip("/")
     api_token = api_token or os.getenv("DAVALLKA_MCP_API_TOKEN")
     if not api_token:
         raise RuntimeError("DAVALLKA_MCP_API_TOKEN is required")
     if not api_url.startswith(("https://", "http://127.0.0.1:", "http://localhost:")):
         raise RuntimeError("API URL must use HTTPS or explicit loopback HTTP")
-    server = MCPServer("davallka-images")
+    server = server or MCPServer("davallka-images")
 
     def asset_path(image_id):
         try:

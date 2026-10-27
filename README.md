@@ -1,6 +1,6 @@
 # d'Avallka
 
-A small public file-sharing service with an authenticated browser UI, image management API and stdio MCP server. Uploaded assets are public to anyone with their URL. Do not upload confidential data.
+A small public file-sharing service with an authenticated browser UI, image management API and MCP servers over stdio and OAuth-protected Streamable HTTP. Uploaded assets are public to anyone with their URL. Do not upload confidential data.
 
 ## Storage and compatibility
 
@@ -19,10 +19,10 @@ Requires Python 3.12+. Copy `env.example` to `.env`, fill in required settings a
 python -m venv .venv
 # Activate your virtual environment, then:
 python -m pip install -r requirements.txt
-python app.py
+uvicorn asgi_server:app --host 127.0.0.1 --port 8080
 ```
 
-The local server uses Waitress on port 8080 by default. For Docker, prepare `state/` so UID 10001 can write it, then use `docker compose up --build -d`. The example binds to loopback port 8080 and expects TLS termination separately. Set `COOKIE_SECURE=false` only for local HTTP development.
+The ASGI entry point serves the browser UI, API, OAuth endpoints and MCP endpoint together. For a browser/API-only development run, `python app.py` still uses Waitress. For Docker, prepare `state/` so UID 10001 can write it, then use `docker compose up --build -d`. The example binds to loopback port 8080 and expects TLS termination separately. Set `COOKIE_SECURE=false` only for local HTTP development.
 
 Required settings:
 
@@ -59,7 +59,20 @@ Asset results contain `id`, `name`, `path`, `url`, `download_url`, `media_type`,
 
 ## MCP
 
-The official Python MCP SDK runs a stdio bridge to the API. Set `DAVALLKA_API_URL` and `DAVALLKA_MCP_API_TOKEN`, then run `python mcp_server.py`. The token must also be configured on the API with the required scopes. There are no secrets in tool arguments or results.
+The official Python MCP SDK serves Streamable HTTP at `<PUBLIC_BASE_URL>/mcp`. Configure that URL in a remote MCP client; OAuth discovery, dynamic client registration, PKCE, browser sign-in and an explicit consent page are provided. The OAuth resource is restricted to this MCP server and the `images:manage` scope. Access tokens expire after 15 minutes. Refresh tokens rotate, with each token expiring 30 days after issuance. Revocation removes all tokens for that client and signed-in administrator.
+
+The consent page uses the existing d'Avallka administrator account. It displays the requesting client, callback address and granted operations before approval. DCR clients are limited to HTTPS callback URLs or HTTP loopback callbacks used by desktop clients. There is no machine-to-machine or anonymous access to the image tools.
+
+Codex configuration example (replace with your own HTTPS origin):
+
+```toml
+[mcp_servers.davallka]
+url = "https://files.example.com/mcp"
+```
+
+ChatGPT's custom MCP connector can use the same URL where the account or workspace supports custom MCP apps. Select OAuth when prompted; the browser consent page appears during connection or the first tool scan.
+
+The official Python MCP SDK also runs a stdio bridge to the API. Set `DAVALLKA_API_URL` and `DAVALLKA_MCP_API_TOKEN`, then run `python mcp_server.py`. This keeps the API credential out of the client configuration. There are no secrets in tool arguments or results.
 
 Example MCP client configuration (replace paths and use private environment injection):
 
@@ -78,7 +91,7 @@ Example MCP client configuration (replace paths and use private environment inje
 }
 ```
 
-Alternatively run the same stdio server through an authenticated SSH command and `docker exec -i <container> python mcp_server.py`; the credential can stay inside the container. Do not allocate a TTY. This release does not expose a public unauthenticated HTTP MCP endpoint.
+Alternatively run the stdio server through an authenticated SSH command and `docker exec -i <container> python mcp_server.py`; the API credential can stay inside the container. Do not allocate a TTY. The HTTP endpoint always requires OAuth authorization.
 
 Tools: `upload_image`, `get_image`, `list_images`, `rename_image`, `set_image_path`, `delete_image`, `restore_image`, `list_cleanup_candidates`.
 

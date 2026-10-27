@@ -1,5 +1,6 @@
 # Tested runtime set for Python 3.12. Direct dependencies: Flask, Werkzeug,
-# Flask-Login, python-dotenv, Pillow, waitress, mcp and httpx.
+# Flask-Login, python-dotenv, Pillow, waitress, mcp, httpx and a2wsgi.
+a2wsgi==1.10.10
 annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0

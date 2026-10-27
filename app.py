@@ -17,12 +17,22 @@ from flask_login import LoginManager, UserMixin, current_user, login_required, l
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from oauth_server import OAuthState
 from storage import Store, StorageError, safe_name, safe_path
 
 
 class User(UserMixin):
     def __init__(self, username):
         self.id = username
+
+
+def safe_local_redirect(target):
+    if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return None
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc or parts.username or parts.password:
+        return None
+    return target
 
 
 def create_app(test_config=None):
@@ -71,6 +81,13 @@ def create_app(test_config=None):
     store = Store(cfg["UPLOAD_FOLDER"], cfg["STATE_FOLDER"], cfg["MAX_FILE_BYTES"], cfg["MAX_STORAGE_BYTES"])
     store.import_legacy()
     app.extensions["store"] = store
+    oauth = OAuthState(
+        store.db_path,
+        cfg["PUBLIC_BASE_URL"],
+        cfg["PUBLIC_BASE_URL"] + "/mcp",
+        cfg["PUBLIC_BASE_URL"] + "/oauth/consent",
+    )
+    app.extensions["oauth_state"] = oauth
     manager = LoginManager(app)
     manager.login_view = "login"
 
@@ -161,6 +178,15 @@ def create_app(test_config=None):
             db.execute("SELECT 1").fetchone()
         return jsonify(status="ok")
 
+    @app.get("/.well-known/oauth-protected-resource")
+    def oauth_resource_metadata():
+        return jsonify(
+            resource=cfg["PUBLIC_BASE_URL"] + "/mcp",
+            authorization_servers=[cfg["PUBLIC_BASE_URL"]],
+            scopes_supported=["images:manage"],
+            bearer_methods_supported=["header"],
+        )
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
@@ -173,10 +199,38 @@ def create_app(test_config=None):
                 session.clear()
                 login_user(User(cfg["ADMIN_USERNAME"]))
                 session.permanent = True
-                return redirect(url_for("index"))
+                target = safe_local_redirect(request.form.get("next") or request.args.get("next"))
+                return redirect(target or url_for("index"))
             store.login_attempt(key, failed=True)
             flash("Invalid username or password")
         return render_template("login.html")
+
+    @app.route("/oauth/consent/<pending_id>", methods=["GET", "POST"])
+    @login_required
+    def oauth_consent(pending_id):
+        pending = oauth.pending_consent(pending_id)
+        if not pending:
+            abort(404, "This authorization request expired or was already handled")
+        details, client = pending
+        if request.method == "POST":
+            decision = request.form.get("decision")
+            if decision not in {"approve", "deny"}:
+                abort(400, "Choose whether to approve or deny this authorization")
+            callback = oauth.finish_consent(pending_id, current_user.get_id(), decision == "approve")
+            if not callback:
+                abort(404, "This authorization request expired or was already handled")
+            return redirect(callback)
+        scope_labels = {
+            "images:manage": "View, upload, rename, move, delete and restore images",
+            "offline_access": "Keep this connection active by refreshing its access token",
+        }
+        scopes = [scope_labels.get(scope, scope) for scope in details["scopes"]]
+        return render_template(
+            "oauth_consent.html",
+            client_name=client.client_name or "MCP application",
+            redirect_uri=details["redirect_uri"],
+            scopes=scopes,
+        )
 
     @app.post("/logout")
     @login_required
@@ -198,7 +252,13 @@ def create_app(test_config=None):
         files, folders = store.browse(folder_path) if current_user.is_authenticated else ([], [])
         for asset in files:
             asset.update(relative_path=asset["canonical_path"], modified=asset["modified_at"], extension=PurePosixPath(asset["canonical_path"]).suffix.lstrip("."))
-        return render_template("index.html", files=files, folders=folders, current_path=folder_path)
+        return render_template(
+            "index.html",
+            files=files,
+            folders=folders,
+            current_path=folder_path,
+            mcp_endpoint=cfg["PUBLIC_BASE_URL"] + "/mcp",
+        )
 
     @app.post("/create_folder")
     @login_required
