@@ -9,11 +9,14 @@ Refresh the browser UI while retaining its dark background and cyan accent. Move
 - Branch / base: `master` / current project baseline
 - Worktree: primary checkout
 - PR / issue: none
-- Exact resume commit: `903d2064912e5cfee31529d31b534163df4741aa`
+- Original implementation: `903d2064912e5cfee31529d31b534163df4741aa`.
+- Exact resume commit: `34d4c88f4360ba4431337c52e48405ac082cb6df`.
 
 ## Current state
 
 The home page uses a compact upload panel, path breadcrumbs, a responsive file list and per-item action menus. Settings includes the MCP address, client connection guidance and a summary of requested image-management permissions. The account menu displays profile-derived OIDC names without exposing the opaque login identity. Existing OIDC sessions acquire a display label through the normal profile revalidation; SQLite receives one additive column with a default. Local login remains unchanged.
+
+Settings has one entry point in the account dropdown. The redundant top-bar button and its unused CSS were removed.
 
 ## Verified results
 
@@ -21,6 +24,7 @@ The home page uses a compact upload panel, path breadcrumbs, a responsive file l
 - Jinja parsed the shared base, file manager and settings templates in the release image.
 - `git diff --check` passed.
 - No tests were added or run.
+- Header follow-up: both authenticated file and settings pages were rendered with isolated temporary state; each contains exactly one Settings link and retains the sign-out form. No new tests were added for this small view change.
 
 ## Findings, decisions and blockers
 
