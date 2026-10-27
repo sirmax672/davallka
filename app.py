@@ -57,6 +57,7 @@ def create_app(test_config=None):
         OIDC_CLIENT_SECRET=os.getenv("OIDC_CLIENT_SECRET", ""),
         OIDC_ADMIN_GROUP=os.getenv("OIDC_ADMIN_GROUP", ""),
         OIDC_GROUP_CLAIM=os.getenv("OIDC_GROUP_CLAIM", "groups"),
+        OIDC_SCOPES=os.getenv("OIDC_SCOPES", "openid profile email entitlements offline_access"),
         OIDC_REVALIDATE_SECONDS=int(os.getenv("OIDC_REVALIDATE_SECONDS", "30")),
         UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", "uploads"),
         STATE_FOLDER=os.getenv("STATE_FOLDER", "state"),
@@ -103,6 +104,9 @@ def create_app(test_config=None):
         cfg["OIDC_ISSUER"] = cfg["OIDC_ISSUER"].rstrip("/") + "/"
         if not cfg["OIDC_CLIENT_ID"] or not cfg["OIDC_CLIENT_SECRET"] or not cfg["OIDC_ADMIN_GROUP"]:
             raise RuntimeError("OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_ADMIN_GROUP are required for OIDC login")
+        oidc_scopes = set(str(cfg["OIDC_SCOPES"]).split())
+        if not {"openid", "entitlements", "offline_access"} <= oidc_scopes:
+            raise RuntimeError("OIDC_SCOPES must include openid, entitlements, and offline_access")
         if not cfg["OIDC_GROUP_CLAIM"] or not 1 <= cfg["OIDC_REVALIDATE_SECONDS"] <= 30:
             raise RuntimeError("OIDC_GROUP_CLAIM is required and OIDC_REVALIDATE_SECONDS must be between 1 and 30")
     base = urlsplit(cfg["PUBLIC_BASE_URL"])
@@ -137,7 +141,7 @@ def create_app(test_config=None):
             client_secret=cfg["OIDC_CLIENT_SECRET"],
             server_metadata_url=discovery_url,
             client_kwargs={
-                "scope": "openid profile offline_access",
+                "scope": cfg["OIDC_SCOPES"],
                 "code_challenge_method": "S256",
                 "default_timeout": 5.0,
                 "token_endpoint_auth_method": "client_secret_basic",
