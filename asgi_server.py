@@ -3,7 +3,6 @@
 from urllib.parse import urlsplit
 
 from a2wsgi import WSGIMiddleware
-from mcp.server.auth.provider import ProviderTokenVerifier
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -35,7 +34,6 @@ auth_settings = AuthSettings(
 mcp_core = MCPServer(
     "davallka-images",
     auth_server_provider=oauth,
-    token_verifier=ProviderTokenVerifier(oauth),
     auth=auth_settings,
 )
 mcp = create_mcp(server=mcp_core)
