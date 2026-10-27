@@ -30,12 +30,16 @@ class OIDCSessionStore:
                     session_id TEXT PRIMARY KEY,
                     issuer TEXT NOT NULL,
                     subject TEXT NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
                     encrypted_token BLOB NOT NULL,
                     created_at REAL NOT NULL,
                     checked_at REAL NOT NULL,
                     expires_at REAL NOT NULL
                 )"""
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(oidc_sessions)")}
+            if "display_name" not in columns:
+                db.execute("ALTER TABLE oidc_sessions ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def connection(self):
@@ -76,19 +80,23 @@ class OIDCSessionStore:
     def _decrypt(self, value):
         return json.loads(self.cipher.decrypt(value).decode("utf-8"))
 
-    def create(self, subject, token, checked_at=None):
+    def create(self, subject, token, checked_at=None, display_name=""):
         if not isinstance(subject, str) or not subject:
             raise ValueError("OIDC provider did not return a stable subject")
+        if not isinstance(display_name, str):
+            display_name = ""
+        display_name = " ".join(display_name.split())[:120]
         session_id = secrets.token_urlsafe(32)
         now = time.time()
         with self.connection() as db:
             db.execute("DELETE FROM oidc_sessions WHERE expires_at<=?", (now,))
             db.execute(
-                "INSERT INTO oidc_sessions(session_id,issuer,subject,encrypted_token,created_at,checked_at,expires_at) VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO oidc_sessions(session_id,issuer,subject,display_name,encrypted_token,created_at,checked_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
                 (
                     session_id,
                     self.issuer,
                     subject,
+                    display_name,
                     self._encrypt(token),
                     now,
                     checked_at if checked_at is not None else now,
@@ -120,19 +128,36 @@ class OIDCSessionStore:
             "session_id": row["session_id"],
             "issuer": row["issuer"],
             "subject": row["subject"],
+            "display_name": row["display_name"],
             "token": token,
             "created_at": row["created_at"],
             "checked_at": row["checked_at"],
             "expires_at": row["expires_at"],
         }
 
-    def update(self, session_id, token, checked_at=None):
+    def update(self, session_id, token, checked_at=None, display_name=None):
+        if display_name is None:
+            with self.connection() as db:
+                db.execute(
+                    "UPDATE oidc_sessions SET encrypted_token=?,checked_at=? WHERE session_id=? AND issuer=?",
+                    (
+                        self._encrypt(token),
+                        checked_at if checked_at is not None else time.time(),
+                        session_id,
+                        self.issuer,
+                    ),
+                )
+            return
+        if not isinstance(display_name, str):
+            display_name = ""
+        display_name = " ".join(display_name.split())[:120]
         with self.connection() as db:
             db.execute(
-                "UPDATE oidc_sessions SET encrypted_token=?,checked_at=? WHERE session_id=? AND issuer=?",
+                "UPDATE oidc_sessions SET encrypted_token=?,checked_at=?,display_name=? WHERE session_id=? AND issuer=?",
                 (
                     self._encrypt(token),
                     checked_at if checked_at is not None else time.time(),
+                    display_name,
                     session_id,
                     self.issuer,
                 ),

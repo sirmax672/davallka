@@ -26,8 +26,9 @@ from storage import Store, StorageError, safe_name, safe_path
 
 
 class User(UserMixin):
-    def __init__(self, username):
+    def __init__(self, username, display_name=None):
         self.id = username
+        self.display_name = display_name or username
 
 
 class OIDCUnavailable(Exception):
@@ -228,6 +229,21 @@ def create_app(test_config=None):
             raise OIDCUnavailable from None
         return profile if isinstance(profile, dict) else None
 
+    def oidc_display_name(profile):
+        if not isinstance(profile, dict):
+            return "Authenticated user"
+        for claim in ("name", "preferred_username", "nickname"):
+            value = profile.get(claim)
+            if isinstance(value, str):
+                value = " ".join(value.split())[:120]
+                if value:
+                    return value
+        parts = [profile.get(claim) for claim in ("given_name", "family_name")]
+        parts = [" ".join(part.split()) for part in parts if isinstance(part, str) and part.strip()]
+        if parts:
+            return " ".join(parts)[:120]
+        return "Authenticated user"
+
     def check_oidc_session(session_id):
         record = oidc_sessions.get(session_id)
         if not record:
@@ -235,7 +251,8 @@ def create_app(test_config=None):
         now = datetime.now().timestamp()
         token = record["token"]
         if (
-            now - record["checked_at"] < cfg["OIDC_REVALIDATE_SECONDS"]
+            record["display_name"]
+            and now - record["checked_at"] < cfg["OIDC_REVALIDATE_SECONDS"]
             and token["expires_at"] > now + 60
         ):
             return True
@@ -255,7 +272,12 @@ def create_app(test_config=None):
         ):
             oidc_sessions.revoke(session_id)
             return False
-        oidc_sessions.update(session_id, token, checked_at=now)
+        oidc_sessions.update(
+            session_id,
+            token,
+            checked_at=now,
+            display_name=oidc_display_name(profile),
+        )
         return True
 
     oidc_validation_lock = threading.RLock()
@@ -288,7 +310,9 @@ def create_app(test_config=None):
         if local_auth_enabled and hmac.compare_digest(user_id.encode(), cfg["ADMIN_USERNAME"].encode()):
             return User(user_id)
         if oidc_auth_enabled and user_id.startswith("oidc:") and oidc_session_is_admin(user_id[5:]):
-            return User(user_id)
+            record = oidc_sessions.get(user_id[5:])
+            if record:
+                return User(user_id, display_name=record["display_name"] or "Authenticated user")
         return None
 
     def csrf_token():
@@ -451,7 +475,11 @@ def create_app(test_config=None):
             flash("This account is not authorized to administer this service")
             return redirect(url_for("login")), 303
         try:
-            oidc_session_id = oidc_sessions.create(profile["sub"], token)
+            oidc_session_id = oidc_sessions.create(
+                profile["sub"],
+                token,
+                display_name=oidc_display_name(profile),
+            )
         except (TypeError, ValueError):
             logging.getLogger(__name__).warning("OIDC provider returned an unusable login response")
             session.pop("oidc_next", None)
@@ -508,6 +536,13 @@ def create_app(test_config=None):
         safe_path(folder_path, allow_empty=True)
         if folder_path.startswith("api/"):
             abort(404)
+        if request.args.get("settings") == "1":
+            if not current_user.is_authenticated:
+                return redirect(url_for("login", next=request.full_path.rstrip("?") or "/"))
+            return render_template(
+                "settings.html",
+                mcp_endpoint=cfg["PUBLIC_BASE_URL"] + "/mcp",
+            )
         files, folders = store.browse(folder_path) if current_user.is_authenticated else ([], [])
         for asset in files:
             asset.update(relative_path=asset["canonical_path"], modified=asset["modified_at"], extension=PurePosixPath(asset["canonical_path"]).suffix.lstrip("."))

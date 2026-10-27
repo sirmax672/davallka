@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+    <a class="back-link" href="{{ url_for('index') }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h11"/></svg>Back to files</a>
+    <header class="settings-heading">
+        <p class="eyebrow">Preferences and connections</p>
+        <h1>Settings</h1>
+        <p>Manage how your file library connects to other tools.</p>
+    </header>
+
+    <div class="settings-grid">
+        <section class="settings-card" aria-labelledby="mcpHeading">
+            <div class="settings-card-header">
+                <span class="settings-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.3 10.8 7.3-3.6M8.3 13.2l7.3 3.6"/></svg></span>
+                <div><h2 id="mcpHeading">MCP connection</h2><p>Connect an assistant to manage images in d'Avallka.</p></div>
+            </div>
+            <div class="settings-card-body">
+                <label class="field-label" for="mcpEndpoint">Server address</label>
+                <div class="endpoint-field">
+                    <code class="endpoint-value" id="mcpEndpoint">{{ mcp_endpoint }}</code>
+                    <button class="button button-primary" id="copyMcpButton" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>
+                        Copy address
+                    </button>
+                </div>
+                <p class="settings-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>Use this address for a remote MCP server over Streamable HTTP. The client opens an authorization page before access is granted.</p>
+            </div>
+        </section>
+
+        <section class="settings-card" aria-labelledby="clientsHeading">
+            <div class="settings-card-header">
+                <span class="settings-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M8 20h8m-4-3.5V20M7.5 9h9m-9 3h5"/></svg></span>
+                <div><h2 id="clientsHeading">Connect a client</h2><p>Paste the server address in your MCP client, then authorize in the browser.</p></div>
+            </div>
+            <div class="settings-card-body client-grid">
+                <div class="client-card"><strong>Codex</strong><span>Open MCP server settings, add a Streamable HTTP server, paste the address, and select Authenticate.</span></div>
+                <div class="client-card"><strong>ChatGPT</strong><span>Add a custom MCP server in the connected apps or plugins settings, paste the address, and continue through OAuth.</span></div>
+            </div>
+        </section>
+
+        <section class="settings-card" aria-labelledby="permissionsHeading">
+            <div class="settings-card-header">
+                <span class="settings-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.4-2.9 7.4-7 9.3-4.1-1.9-7-4.9-7-9.3V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+                <div><h2 id="permissionsHeading">What an approved connection can do</h2><p>Review the requested access on the authorization screen before approving.</p></div>
+            </div>
+            <div class="settings-card-body">
+                <ul class="permission-list">
+                    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Browse and inspect images</li>
+                    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Upload new images</li>
+                    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Rename images and change their URLs</li>
+                    <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Delete and restore images</li>
+                </ul>
+                <p class="settings-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>Deleting an image from the MCP connection is recoverable. Review the requested permissions in the client before approving access.</p>
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        const copyButton = document.getElementById('copyMcpButton');
+        copyButton.addEventListener('click', async () => {
+            const address = document.getElementById('mcpEndpoint').textContent.trim();
+            try {
+                await navigator.clipboard.writeText(address);
+            } catch (_) {
+                const field = document.createElement('textarea');
+                field.value = address;
+                field.style.position = 'fixed';
+                field.style.opacity = '0';
+                document.body.appendChild(field);
+                field.select();
+                document.execCommand('copy');
+                field.remove();
+            }
+            copyButton.lastChild.textContent = ' Copied';
+            window.setTimeout(() => { copyButton.lastChild.textContent = ' Copy address'; }, 1800);
+        });
+    </script>
+{% endblock %}
