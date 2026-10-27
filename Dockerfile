@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir --upgrade pip==26.2.2 \
     && pip install --no-cache-dir -r requirements.txt \
     && groupadd -g 10001 app && useradd -u 10001 -g app -M app \
     && mkdir /app/uploads /app/state && chown app:app /app/state
-COPY app.py storage.py mcp_server.py oauth_server.py asgi_server.py ./
+COPY app.py storage.py mcp_server.py oauth_server.py oidc_sessions.py asgi_server.py ./
 COPY templates ./templates
 COPY static ./static
 USER 10001:10001

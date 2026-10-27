@@ -1,6 +1,5 @@
 """Browser UI and authenticated image API, sharing the same storage service."""
-from datetime import datetime, timedelta
-from functools import wraps
+import asyncio
 import hashlib
 import hmac
 import json
@@ -9,21 +8,30 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import secrets
+import threading
+from datetime import datetime, timedelta
+from functools import wraps
 from urllib.parse import quote, urlsplit
 
+import httpx
 from dotenv import load_dotenv
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
-from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
+from flask_login import LoginManager, UserMixin, current_user, login_required, login_user
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from oauth_server import OAuthState
+from oauth_server import OAuthState, REFRESH_TOKEN_TTL
+from oidc_sessions import OIDCSessionStore
 from storage import Store, StorageError, safe_name, safe_path
 
 
 class User(UserMixin):
     def __init__(self, username):
         self.id = username
+
+
+class OIDCUnavailable(Exception):
+    """The identity provider could not be safely consulted."""
 
 
 def safe_local_redirect(target):
@@ -43,6 +51,13 @@ def create_app(test_config=None):
         ADMIN_USERNAME=os.getenv("ADMIN_USERNAME", "admin"),
         ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD"),
         ADMIN_PASSWORD_HASH=os.getenv("ADMIN_PASSWORD_HASH"),
+        AUTH_MODE=os.getenv("AUTH_MODE", "local"),
+        OIDC_ISSUER=os.getenv("OIDC_ISSUER", "").strip(),
+        OIDC_CLIENT_ID=os.getenv("OIDC_CLIENT_ID", ""),
+        OIDC_CLIENT_SECRET=os.getenv("OIDC_CLIENT_SECRET", ""),
+        OIDC_ADMIN_GROUP=os.getenv("OIDC_ADMIN_GROUP", ""),
+        OIDC_GROUP_CLAIM=os.getenv("OIDC_GROUP_CLAIM", "groups"),
+        OIDC_REVALIDATE_SECONDS=int(os.getenv("OIDC_REVALIDATE_SECONDS", "30")),
         UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", "uploads"),
         STATE_FOLDER=os.getenv("STATE_FOLDER", "state"),
         PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", ""),
@@ -62,13 +77,34 @@ def create_app(test_config=None):
     cfg = app.config
     if not cfg["SECRET_KEY"] or len(cfg["SECRET_KEY"]) < 32 or cfg["SECRET_KEY"] == "your-secret-key-change-this":
         raise RuntimeError("A random FLASK_SECRET_KEY of at least 32 characters is required")
-    if not cfg["ADMIN_USERNAME"]:
+    cfg["AUTH_MODE"] = str(cfg["AUTH_MODE"]).strip().lower()
+    if cfg["AUTH_MODE"] not in {"local", "hybrid", "oidc"}:
+        raise RuntimeError("AUTH_MODE must be local, hybrid, or oidc")
+    local_auth_enabled = cfg["AUTH_MODE"] in {"local", "hybrid"}
+    oidc_auth_enabled = cfg["AUTH_MODE"] in {"hybrid", "oidc"}
+    if local_auth_enabled and not cfg["ADMIN_USERNAME"]:
         raise RuntimeError("ADMIN_USERNAME is required")
-    if not cfg["ADMIN_PASSWORD_HASH"]:
+    if local_auth_enabled and not cfg["ADMIN_PASSWORD_HASH"]:
         if not cfg["ADMIN_PASSWORD"] or cfg["ADMIN_PASSWORD"] == "password123":
             raise RuntimeError("A non-example administrator password or hash is required")
         cfg["ADMIN_PASSWORD_HASH"] = generate_password_hash(cfg["ADMIN_PASSWORD"])
     cfg.pop("ADMIN_PASSWORD", None)
+    if oidc_auth_enabled:
+        issuer = urlsplit(cfg["OIDC_ISSUER"])
+        if (
+            issuer.scheme != "https"
+            or not issuer.netloc
+            or issuer.username
+            or issuer.password
+            or issuer.query
+            or issuer.fragment
+        ):
+            raise RuntimeError("OIDC_ISSUER must be an HTTPS issuer URL")
+        cfg["OIDC_ISSUER"] = cfg["OIDC_ISSUER"].rstrip("/") + "/"
+        if not cfg["OIDC_CLIENT_ID"] or not cfg["OIDC_CLIENT_SECRET"] or not cfg["OIDC_ADMIN_GROUP"]:
+            raise RuntimeError("OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_ADMIN_GROUP are required for OIDC login")
+        if not cfg["OIDC_GROUP_CLAIM"] or not 1 <= cfg["OIDC_REVALIDATE_SECONDS"] <= 30:
+            raise RuntimeError("OIDC_GROUP_CLAIM is required and OIDC_REVALIDATE_SECONDS must be between 1 and 30")
     base = urlsplit(cfg["PUBLIC_BASE_URL"])
     if base.scheme not in {"https", "http"} or not base.netloc or base.username or base.password or base.query or base.fragment or base.path not in {"", "/"}:
         raise RuntimeError("PUBLIC_BASE_URL must be a trusted absolute origin")
@@ -88,12 +124,168 @@ def create_app(test_config=None):
         cfg["PUBLIC_BASE_URL"] + "/oauth/consent",
     )
     app.extensions["oauth_state"] = oauth
+    oidc_client = None
+    oidc_sessions = None
+    if oidc_auth_enabled:
+        from authlib.integrations.flask_client import OAuth
+
+        oidc_registry = OAuth(app)
+        discovery_url = cfg["OIDC_ISSUER"] + ".well-known/openid-configuration"
+        oidc_client = oidc_registry.register(
+            "authentik",
+            client_id=cfg["OIDC_CLIENT_ID"],
+            client_secret=cfg["OIDC_CLIENT_SECRET"],
+            server_metadata_url=discovery_url,
+            client_kwargs={
+                "scope": "openid profile offline_access",
+                "code_challenge_method": "S256",
+                "default_timeout": 5.0,
+                "token_endpoint_auth_method": "client_secret_basic",
+            },
+        )
+        oidc_sessions = OIDCSessionStore(
+            store.db_path,
+            cfg["SECRET_KEY"],
+            cfg["OIDC_ISSUER"],
+            lifetime_seconds=REFRESH_TOKEN_TTL,
+        )
+        app.extensions["oidc_sessions"] = oidc_sessions
+
+    def oidc_metadata():
+        try:
+            metadata = oidc_client.load_server_metadata()
+        except Exception as exc:
+            raise OIDCUnavailable from exc
+        if (
+            not isinstance(metadata, dict)
+            or not isinstance(metadata.get("issuer"), str)
+            or metadata["issuer"].rstrip("/") != cfg["OIDC_ISSUER"].rstrip("/")
+        ):
+            raise OIDCUnavailable
+        required_endpoints = ("authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri")
+        if any(not metadata.get(name) for name in required_endpoints):
+            raise OIDCUnavailable
+        for name in required_endpoints:
+            endpoint = metadata[name]
+            if not isinstance(endpoint, str):
+                raise OIDCUnavailable
+            parsed = urlsplit(endpoint)
+            if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+                raise OIDCUnavailable
+        return metadata
+
+    def refresh_oidc_token(token, metadata):
+        if token["expires_at"] > datetime.now().timestamp() + 60:
+            return token
+        refresh_token = token.get("refresh_token")
+        if not refresh_token:
+            return None
+        try:
+            response = httpx.post(
+                metadata["token_endpoint"],
+                data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+                auth=(cfg["OIDC_CLIENT_ID"], cfg["OIDC_CLIENT_SECRET"]),
+                headers={"Accept": "application/json"},
+                timeout=5.0,
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise OIDCUnavailable from exc
+        if response.status_code in {400, 401, 403}:
+            return None
+        if response.status_code != 200:
+            raise OIDCUnavailable
+        try:
+            refreshed = response.json()
+            refreshed = OIDCSessionStore._minimal_token(refreshed)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            raise OIDCUnavailable from None
+        if "refresh_token" not in refreshed:
+            refreshed["refresh_token"] = refresh_token
+        return refreshed
+
+    def oidc_userinfo(token, metadata):
+        try:
+            response = httpx.get(
+                metadata["userinfo_endpoint"],
+                headers={"Authorization": "Bearer " + token["access_token"], "Accept": "application/json"},
+                timeout=5.0,
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise OIDCUnavailable from exc
+        if response.status_code in {400, 401, 403}:
+            return None
+        if response.status_code != 200:
+            raise OIDCUnavailable
+        try:
+            profile = response.json()
+        except (ValueError, json.JSONDecodeError):
+            raise OIDCUnavailable from None
+        return profile if isinstance(profile, dict) else None
+
+    def check_oidc_session(session_id):
+        record = oidc_sessions.get(session_id)
+        if not record:
+            return False
+        now = datetime.now().timestamp()
+        token = record["token"]
+        if (
+            now - record["checked_at"] < cfg["OIDC_REVALIDATE_SECONDS"]
+            and token["expires_at"] > now + 60
+        ):
+            return True
+        metadata = oidc_metadata()
+        token = refresh_oidc_token(token, metadata)
+        if not token:
+            oidc_sessions.revoke(session_id)
+            return False
+        profile = oidc_userinfo(token, metadata)
+        groups = profile.get(cfg["OIDC_GROUP_CLAIM"]) if profile else None
+        if (
+            not profile
+            or profile.get("sub") != record["subject"]
+            or not isinstance(groups, list)
+            or not all(isinstance(group, str) for group in groups)
+            or cfg["OIDC_ADMIN_GROUP"] not in groups
+        ):
+            oidc_sessions.revoke(session_id)
+            return False
+        oidc_sessions.update(session_id, token, checked_at=now)
+        return True
+
+    oidc_validation_lock = threading.RLock()
+
+    def oidc_session_is_admin(session_id):
+        with oidc_validation_lock:
+            return check_oidc_session(session_id)
+
+    async def mcp_subject_is_authorized(subject):
+        if not isinstance(subject, str):
+            return False
+        if local_auth_enabled and hmac.compare_digest(subject.encode(), cfg["ADMIN_USERNAME"].encode()):
+            return True
+        if oidc_auth_enabled and subject.startswith("oidc:"):
+            try:
+                return await asyncio.to_thread(oidc_session_is_admin, subject[5:])
+            except OIDCUnavailable:
+                return False
+        return False
+
+    oauth.set_subject_validator(mcp_subject_is_authorized)
+
     manager = LoginManager(app)
     manager.login_view = "login"
 
     @manager.user_loader
     def load_user(user_id):
-        return User(user_id) if isinstance(user_id, str) and hmac.compare_digest(user_id.encode(), cfg["ADMIN_USERNAME"].encode()) else None
+        if not isinstance(user_id, str):
+            return None
+        if local_auth_enabled and hmac.compare_digest(user_id.encode(), cfg["ADMIN_USERNAME"].encode()):
+            return User(user_id)
+        if oidc_auth_enabled and user_id.startswith("oidc:") and oidc_session_is_admin(user_id[5:]):
+            return User(user_id)
+        return None
 
     def csrf_token():
         if "csrf_token" not in session:
@@ -124,6 +316,10 @@ def create_app(test_config=None):
     @app.errorhandler(StorageError)
     def storage_error(exc):
         return jsonify(error={"code": exc.code, "message": str(exc)}), exc.status
+
+    @app.errorhandler(OIDCUnavailable)
+    def oidc_unavailable(_exc):
+        return jsonify(error={"code": "identity_provider_unavailable", "message": "Identity authorization is temporarily unavailable"}), 503
 
     @app.errorhandler(HTTPException)
     def http_error(exc):
@@ -190,6 +386,8 @@ def create_app(test_config=None):
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
+            if not local_auth_enabled:
+                abort(404)
             # Hash peer address; ignore untrusted forwarding headers.
             key = hashlib.sha256((request.remote_addr or "unknown").encode()).hexdigest()
             store.login_attempt(key)
@@ -203,7 +401,63 @@ def create_app(test_config=None):
                 return redirect(target or url_for("index"))
             store.login_attempt(key, failed=True)
             flash("Invalid username or password")
-        return render_template("login.html")
+        return render_template(
+            "login.html",
+            show_local_login=local_auth_enabled,
+            show_oidc_login=oidc_auth_enabled,
+        )
+
+    @app.get("/auth/oidc/login")
+    def oidc_login():
+        if not oidc_auth_enabled:
+            abort(404)
+        session["oidc_next"] = safe_local_redirect(request.args.get("next")) or ""
+        callback_url = cfg["PUBLIC_BASE_URL"] + "/auth/oidc/callback"
+        try:
+            return oidc_client.authorize_redirect(callback_url)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("OIDC authorization could not start: %s", type(exc).__name__)
+            flash("Single sign-on is temporarily unavailable")
+            return redirect(url_for("login")), 303
+
+    @app.get("/auth/oidc/callback")
+    def oidc_callback():
+        if not oidc_auth_enabled:
+            abort(404)
+        try:
+            token = oidc_client.authorize_access_token()
+            metadata = oidc_metadata()
+            profile = oidc_userinfo(token, metadata)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("OIDC sign-in could not be completed: %s", type(exc).__name__)
+            session.pop("oidc_next", None)
+            flash("Single sign-on could not be completed")
+            return redirect(url_for("login")), 303
+        groups = profile.get(cfg["OIDC_GROUP_CLAIM"]) if profile else None
+        verified_subject = (token.get("userinfo") or {}).get("sub") if isinstance(token, dict) else None
+        if (
+            not profile
+            or not isinstance(profile.get("sub"), str)
+            or profile.get("sub") != verified_subject
+            or not isinstance(groups, list)
+            or not all(isinstance(group, str) for group in groups)
+            or cfg["OIDC_ADMIN_GROUP"] not in groups
+        ):
+            session.pop("oidc_next", None)
+            flash("This account is not authorized to administer this service")
+            return redirect(url_for("login")), 303
+        try:
+            oidc_session_id = oidc_sessions.create(profile["sub"], token)
+        except (TypeError, ValueError):
+            logging.getLogger(__name__).warning("OIDC provider returned an unusable login response")
+            session.pop("oidc_next", None)
+            flash("Single sign-on could not be completed")
+            return redirect(url_for("login")), 303
+        target = session.pop("oidc_next", "")
+        session.clear()
+        login_user(User("oidc:" + oidc_session_id), fresh=True)
+        session.permanent = True
+        return redirect(safe_local_redirect(target) or url_for("index"))
 
     @app.route("/oauth/consent/<pending_id>", methods=["GET", "POST"])
     @login_required
@@ -233,9 +487,10 @@ def create_app(test_config=None):
         )
 
     @app.post("/logout")
-    @login_required
     def logout():
-        logout_user()
+        principal = session.get("_user_id", "")
+        if oidc_sessions and isinstance(principal, str) and principal.startswith("oidc:"):
+            oidc_sessions.revoke(principal[5:])
         session.clear()
         return redirect(url_for("index"))
 

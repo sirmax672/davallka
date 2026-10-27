@@ -100,6 +100,51 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
         }
+
+        .sso-btn {
+            display: block;
+            width: 100%;
+            margin-bottom: 20px;
+            padding: 14px 15px;
+            border: 1px solid #00a9cc;
+            border-radius: 8px;
+            background: #102127;
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 500;
+            text-align: center;
+            text-decoration: none;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .sso-btn:hover {
+            background: #17323a;
+            border-color: #00d4ff;
+        }
+
+        .sso-btn:focus-visible,
+        .login-btn:focus-visible,
+        .back-link a:focus-visible {
+            outline: 3px solid #00d4ff;
+            outline-offset: 3px;
+        }
+
+        .login-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 18px 0;
+            color: #888888;
+            font-size: 13px;
+        }
+
+        .login-divider::before,
+        .login-divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: #333333;
+        }
         
         .flash-messages {
             margin-bottom: 20px;
@@ -158,21 +203,31 @@
             {% endif %}
         {% endwith %}
         
-        <form method="post">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            
-            <button type="submit" class="login-btn">Login</button>
-        </form>
+        {% if show_oidc_login %}
+            <a class="sso-btn" href="{{ url_for('oidc_login', next=request.args.get('next')) }}">Sign in using SSO</a>
+        {% endif %}
+
+        {% if show_oidc_login and show_local_login %}
+            <div class="login-divider">or sign in with the local account</div>
+        {% endif %}
+
+        {% if show_local_login %}
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit" class="login-btn">Login</button>
+            </form>
+        {% endif %}
         
         <div class="back-link">
             <a href="{{ url_for('index') }}">← Back to d'Avallka</a>

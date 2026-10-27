@@ -1,12 +1,14 @@
 # Tested runtime set for Python 3.12. Direct dependencies: Flask, Werkzeug,
-# Flask-Login, python-dotenv, Pillow, waitress, mcp, httpx and a2wsgi.
+# Flask-Login, Authlib, requests, python-dotenv, Pillow, waitress, mcp, httpx and a2wsgi.
 a2wsgi==1.10.10
 annotated-types==0.8.0
 anyio==4.15.1
 attrs==26.1.0
+Authlib==1.9.1
 blinker==1.9.0
 certifi==2026.10.23
 cffi==2.1.1
+charset_normalizer==3.5.2
 click==8.5.0
 cryptography==50.0.2
 Flask==3.1.3
@@ -21,6 +23,7 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+joserfc==1.7.7
 MarkupSafe==3.0.4
 mcp==2.3.0
 mcp-types==2.3.0
@@ -34,12 +37,14 @@ python-dotenv==1.2.4
 python-multipart==0.0.32
 pywin32==312; sys_platform == "win32"
 referencing==0.37.0
+requests==2.34.2
 rpds-py==2026.9.1
 sse-starlette==3.5.1
 starlette==1.10.0
 truststore==0.10.5
 typing-inspection==0.4.4
 typing_extensions==4.16.0
+urllib3==2.8.0
 uvicorn==0.54.0
 waitress==3.0.2
 Werkzeug==3.1.9

@@ -29,11 +29,16 @@ Required settings:
 | Setting | Meaning |
 | --- | --- |
 | `FLASK_SECRET_KEY` | Random session key, at least 32 characters; example/missing key fails startup. |
-| `ADMIN_USERNAME` | Existing administrator login; default `admin`. |
-| `ADMIN_PASSWORD_HASH` or `ADMIN_PASSWORD` | Prefer a Werkzeug password hash. Legacy configured passwords are supported unchanged and hashed in memory. Example/missing password fails startup. |
+| `AUTH_MODE` | Deployment choice: `local` (default), `hybrid` (local and OIDC), or `oidc` (OIDC only). |
+| `ADMIN_USERNAME` | Local administrator login; default `admin`, required when `AUTH_MODE=local` or `hybrid`. |
+| `ADMIN_PASSWORD_HASH` or `ADMIN_PASSWORD` | Prefer a Werkzeug password hash. Local credentials are required for `local` and `hybrid`; the legacy password is hashed in memory and remains unchanged in protected runtime configuration. |
 | `PUBLIC_BASE_URL` | Trusted public origin for returned URLs, such as `https://files.example.com`. |
 | `DAVALLKA_API_TOKENS` | JSON mapping of random tokens (at least 32 characters) to explicit `read`, `write`, `delete` scope lists. Empty map disables API access. |
 | `UPLOAD_FOLDER`, `STATE_FOLDER` | Default `uploads` and `state`. |
+
+For `AUTH_MODE=hybrid` or `oidc`, configure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and the exact case-sensitive `OIDC_ADMIN_GROUP`. Register `<PUBLIC_BASE_URL>/auth/oidc/callback` as the provider's exact redirect URI. The client uses the authorization-code flow with S256 PKCE and `openid profile offline_access`; configure the provider's profile mapping to return the configured `OIDC_GROUP_CLAIM` (default `groups`). Each sign-in is verified against the configured issuer and immutable subject; the application never links accounts by email or username. Only members of the configured admin group receive access. Keep the client secret in protected runtime configuration.
+
+OIDC access and refresh tokens stay in an encrypted server-side SQLite table, not in the browser cookie. Browser cookies keep the existing 12-hour lifetime; the encrypted authorization record is bounded by the existing 30-day MCP refresh-token lifetime. Administrator-group membership is refreshed at most every 30 seconds; if the identity provider cannot be reached after that interval, protected browser requests fail closed with HTTP 503. OIDC-backed MCP consent and token use apply the same authorization check, so existing MCP credentials stop working after group access is revoked. Application sign-out clears the d'Avallka session and its linked MCP authorization, but does not end the global identity-provider session. The MCP consent page uses the same administrator login in every mode.
 
 Optional limits: `MAX_FILE_BYTES` (100 MiB), `MAX_REQUEST_BYTES` (101 MiB, including multipart overhead), `MAX_STORAGE_BYTES` (10 GiB catalogued bytes, including soft-deleted assets). Image validation allows at most 40 million pixels per frame, 80 million across frames and 200 frames. The request limit at your reverse proxy must also accommodate multipart overhead. Apply independent disk-capacity monitoring: orphan/staging files and SQLite overhead are outside the logical quota.
 

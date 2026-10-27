@@ -52,6 +52,7 @@ class OAuthState:
         self.issuer_url = issuer_url.rstrip("/")
         self.resource_url = resource_url.rstrip("/")
         self.consent_url = consent_url.rstrip("/")
+        self.subject_validator = None
         with self.connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(
@@ -87,6 +88,13 @@ class OAuthState:
                     ON oauth_tokens(client_id, subject, token_type);
                 """
             )
+
+    def set_subject_validator(self, validator):
+        """Install a live authorization check for subjects owning MCP tokens."""
+        self.subject_validator = validator
+
+    async def subject_is_authorized(self, subject):
+        return self.subject_validator is None or await self.subject_validator(subject)
 
     @contextmanager
     def connection(self):
@@ -285,6 +293,11 @@ class OAuthState:
                 db.execute("ROLLBACK")
                 raise TokenError("invalid_grant", "The authorization code is not valid for this resource")
             db.execute("DELETE FROM oauth_codes WHERE code_hash=?", (_hash(stored.code),))
+            db.execute("COMMIT")
+        if not await self.subject_is_authorized(stored.subject):
+            raise TokenError("invalid_grant", "The administrator authorization is no longer active")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
             result = self._insert_tokens(db, client.client_id, stored.subject, stored.scopes, stored.resource)
             db.execute("COMMIT")
         return result
@@ -298,6 +311,8 @@ class OAuthState:
             ).fetchone()
         if not row or row["client_id"] != client.client_id or row["expires_at"] < now:
             return None
+        if not await self.subject_is_authorized(row["subject"]):
+            return None
         return RefreshToken(
             token=refresh_token,
             client_id=row["client_id"],
@@ -308,6 +323,8 @@ class OAuthState:
         )
 
     async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken:
+        if not await self.subject_is_authorized(refresh_token.subject):
+            raise TokenError("invalid_grant", "The administrator authorization is no longer active")
         now = int(time.time())
         token_hash = _hash(refresh_token.token)
         with self.connection() as db:
@@ -337,6 +354,8 @@ class OAuthState:
                 (_hash(token),),
             ).fetchone()
         if not row or row["expires_at"] < now:
+            return None
+        if not await self.subject_is_authorized(row["subject"]):
             return None
         return AccessToken(
             token=token,
