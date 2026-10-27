@@ -14,4 +14,5 @@
 - Keep filesystem blob storage initially; evaluate object storage only when operational requirements justify migration.
 
 - Preserve legacy bytes in place using a read-only mount; store mutations in a separate transactional catalog and new blob directory.
-- Start with stdio MCP. No automatic purge; URL changes preserve the previous alias by default.
+- Keep both stdio MCP and remote Streamable HTTP MCP. Protect remote access with OAuth authorization code + PKCE, resource-bound tokens, `images:manage`, and consent through the existing administrator login; do not create a second user store.
+- No automatic purge; URL changes preserve the previous alias by default.

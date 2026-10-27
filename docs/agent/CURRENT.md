@@ -2,16 +2,18 @@
 
 ## Goal
 
-Deliver hardened file sharing, an authenticated image API and stdio MCP while preserving legacy bytes and links.
+Maintain hardened file sharing, an authenticated image API and MCP access while preserving legacy bytes and links.
 
 ## State
 
-Implementation is complete. The service uses a transactional catalog over read-only legacy assets and separate managed blobs. Existing configured administrator credentials remain supported; unsafe session secrets fail startup. API/MCP support upload, metadata rename, URL changes with aliases, recoverable deletion and restoration.
+Implementation is complete at `ec2ffd18630740b186981c37e456d28752b42897`. The service uses a transactional catalog over read-only legacy assets and separate managed blobs. Existing configured administrator credentials remain supported; unsafe session secrets fail startup. API/MCP support upload, metadata rename, URL changes with aliases, recoverable deletion and restoration.
 
-Windows validation: 26 tests pass, including a real stdio subprocess and API/MCP lifecycle. The Linux container suite and an isolated restored-data candidate also pass. Python dependency audit has no known findings. Release verification is complete; operational details and recovery state are tracked privately.
+MCP is available over stdio and remote Streamable HTTP. The HTTP transport uses OAuth authorization code with PKCE, dynamic client registration, resource-bound tokens, and explicit consent through the existing administrator login. Both transports expose the same eight image-management tools. A disposable candidate passed OAuth discovery, consent, PKCE exchange, refresh/revocation and image lifecycle checks; no production user or image was used for those checks. Operational release evidence and recovery details stay private.
+
+Windows and Linux validation for the existing hardening/API/stdio release passed 26 tests. The remote OAuth flow passed an isolated candidate smoke check. Python dependency audit has no known findings.
 
 ## Constraints
 
-No destructive migration or automatic purge. Keep state persistent and separate from the legacy mount. No arbitrary URL fetching or server-path upload tools. Remote HTTP MCP authorization and shared infrastructure upgrades are separate future work.
+No destructive migration or automatic purge. Keep state persistent and separate from the legacy mount. No arbitrary URL fetching or server-path upload tools. Keep all host-specific release information out of this public handover.
 
 See [the workstream card](workstreams/hardening-and-mcp.md).

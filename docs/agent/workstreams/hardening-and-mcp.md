@@ -3,9 +3,9 @@
 ## Scope and resume state
 
 - Reviewed application baseline: `05871c7daa5ea65f336e2a489f2fc00d92802b63` (`master`).
-- Implemented: storage boundary, fail-closed sessions, identity validation, CSRF, attachment policy, rate-limited login, scoped API, transactional catalog and official-SDK stdio MCP.
-- Implementation commit: `9a45dcf9b4c1e9fb85be3a2f677c5f6ffd7d48b1`, merged to `master`; primary checkout; no PR.
-- Exact implementation resume commit: `9a45dcf9b4c1e9fb85be3a2f677c5f6ffd7d48b1`. Later handover-only commits do not change runtime code.
+- Implemented: storage boundary, fail-closed sessions, identity validation, CSRF, attachment policy, rate-limited login, scoped API, transactional catalog, official-SDK stdio MCP, and OAuth-protected remote Streamable HTTP MCP.
+- Implementation commit: `ec2ffd18630740b186981c37e456d28752b42897`, merged to `master`; primary checkout; no PR.
+- Exact implementation resume commit: `ec2ffd18630740b186981c37e456d28752b42897`. Later handover-only commits do not change runtime code.
 - Deployment observations and runbooks are deliberately excluded from this public card.
 
 ## Assessment findings at the reviewed baseline
@@ -61,17 +61,17 @@ Use an official supported SDK and call the management API; do not automate the l
 | `delete_image` / `restore_image` | Delete or restore by stable ID with expected version. Show exact targets in previews for bulk cleanup. |
 | `list_cleanup_candidates` | List old/unused candidates without deleting; metadata age does not prove a file is unreferenced externally. |
 
-- Start with stdio on the agent machine and a revocable, scoped service credential for the API. Never put credentials in prompts, tool results or logs.
+- Stdio uses a revocable, scoped service credential for the API. Never put credentials in prompts, tool results or logs.
 - A remote MCP server cannot read files on a caller's laptop by path. Define bounded base64 for small inputs or a separate authenticated multipart/upload-session flow for larger images. Local-file helpers must enforce allowed client roots and symlink policy.
 - Do not enable arbitrary URL fetches by default. If added later, enforce SSRF controls across DNS resolution and redirects, reject private/link-local/metadata endpoints and bound time/size.
-- Remote HTTP transport needs HTTPS and protocol-compatible authorization with per-client scopes and audience validation. Do not pass MCP tokens through as API tokens.
+- Remote Streamable HTTP uses the official SDK's OAuth authorization code flow, PKCE S256, dynamic client registration, resource URL validation, required `images:manage` scope, hashed one-use codes/tokens, rotating refresh tokens, revocation and browser consent through the existing administrator login. Do not pass MCP tokens through as API tokens.
 - Mark read and destructive tools accurately; annotations supplement authorization. Treat filenames and image metadata as untrusted data, never model instructions.
-- Gate: intended MCP clients pass handshake, tool discovery and the upload -> URL -> name change -> URL change -> delete -> restore workflow. Verify revoked/scoped credentials, duplicate retries, forbidden paths, conflicts and target-specific destructive previews.
+- Gate: intended MCP clients pass handshake, OAuth discovery/consent/PKCE, tool discovery and the upload -> URL -> name change -> URL change -> delete -> restore workflow. Verify revoked/scoped credentials, duplicate retries, forbidden paths, conflicts and target-specific destructive previews. The isolated candidate passed the complete OAuth and image lifecycle smoke; the production deployment was separately verified without creating synthetic client, user or image records.
 
 ### 4. Packaging and release readiness
 
 - Document generic configuration, sample API and MCP usage with fictitious domains only.
-- Add production WSGI packaging, non-root runtime, health/readiness checks and bounded resources.
+- Keep production ASGI/WSGI packaging, non-root runtime, health/readiness checks and bounded resources aligned with the supported MCP transports.
 - Migration, backup/restore and rollback must be verified in a separate private deployment process before promotion.
 
 ## References
@@ -87,11 +87,11 @@ Use an official supported SDK and call the management API; do not automate the l
 
 - Legacy files are cataloged without touching bytes, ownership or paths; the runtime legacy mount can be read-only. New immutable blobs and SQLite WAL state live separately.
 - Names and canonical paths are separate. Browser rename preserves old aliases; API rename changes metadata only. Deletion is recoverable with no automatic purge. Every API mutation checks the expected version.
-- Eight MCP tools are implemented through the official SDK 2.3.0 stdio transport and scoped API credentials. Base64 upload is capped at 10 MiB; multipart API handles larger files. No arbitrary local paths or URL fetching.
-- Production packaging uses pinned dependencies/base image, Waitress, UID 10001, healthcheck, read-only root filesystem and bounded resources.
+- Eight MCP tools are implemented through the official SDK 2.3.0 on both stdio and remote Streamable HTTP. HTTP access uses OAuth and the existing administrator identity; stdio retains scoped API credentials. Base64 upload is capped at 10 MiB; multipart API handles larger files. No arbitrary local paths or URL fetching.
+- Production packaging uses pinned dependencies/base image, Uvicorn ASGI with the existing Flask UI via WSGI middleware, UID 10001, healthcheck, read-only root filesystem and bounded resources.
 - 26 Windows and Linux tests pass, including actual stdio transport, legacy-byte preservation, symlinks where available, concurrent idempotency, credentials/CSRF, scope denial, aliases, soft delete and restore. Dependency audit reports no known vulnerabilities.
 - Operational verification is tracked privately; no deployment details belong here.
 
 ## Next action
 
-Implementation and release verification are complete. Resume future development from the implementation commit above and keep operational details private. Future work: explicit purge/retention design, conservative orphan reconciliation and remote HTTP MCP authorization if requested.
+Implementation and remote OAuth MCP release verification are complete. Resume future development from the implementation commit above and keep operational details private. Future work: explicit purge/retention design, conservative orphan reconciliation and broader client compatibility as needed.
