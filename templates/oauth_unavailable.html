@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block title %}Restart MCP authorization{% endblock %}
+
+{% block content %}
+    <section class="guest-card">
+        <p class="eyebrow">MCP connection</p>
+        <h1>Start a new authorization</h1>
+        <p>This authorization link has expired or has already been used. Return to the app connecting to d'Avallka and choose Authenticate or Connect again.</p>
+        <p>Each link works once. Refreshing this page cannot start a new connection.</p>
+        <a class="button" href="{{ url_for('index') }}">Back to files</a>
+    </section>
+{% endblock %}

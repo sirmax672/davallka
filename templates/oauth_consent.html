@@ -21,6 +21,7 @@
         .approve { color: white; background: #1769aa; flex: 1; }
         .deny { color: #344353; background: #e9eef3; }
         .csrf { display: none; }
+        form[data-submitting] button { pointer-events: none; opacity: .6; }
     </style>
 </head>
 <body>
@@ -32,11 +33,21 @@
             <ul>{% for scope in scopes %}<li>{{ scope }}</li>{% endfor %}</ul>
         </section>
         <p class="redirect">After you choose, d'Avallka returns to: {{ redirect_uri }}</p>
-        <form method="post" class="actions">
+        <form method="post" class="actions" id="consentForm">
             <input class="csrf" type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="deny" type="submit" name="decision" value="deny">Cancel</button>
             <button class="approve" type="submit" name="decision" value="approve">Authorize</button>
         </form>
     </main>
+    <script>
+        document.getElementById('consentForm').addEventListener('submit', function(event) {
+            if (this.dataset.submitting) {
+                event.preventDefault();
+                return;
+            }
+            this.dataset.submitting = 'true';
+            this.querySelectorAll('button').forEach(button => button.setAttribute('aria-disabled', 'true'));
+        });
+    </script>
 </body>
 </html>
