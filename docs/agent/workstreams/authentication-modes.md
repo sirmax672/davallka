@@ -3,7 +3,7 @@
 ## Scope and resume reference
 
 - Add deployment-selected `local`, `hybrid`, and `oidc` browser login modes while keeping local authentication as the default.
-- Branch: `master`, primary checkout. Base: `2628272420a1228ad06edea515c661c3d547dd8d`.
+- Branch: `master`, primary checkout. Implementation: `2ba8b01cbd5f389c75f63383f710d5d867e92e32`, based on `2628272420a1228ad06edea515c661c3d547dd8d`.
 - Public development handover only. Provider credentials, issuer URLs, production host details and operational procedures belong in private memory.
 
 ## Current state
@@ -16,7 +16,7 @@
 
 ## Verification
 
-- Python compilation and `git diff --check` pass.
+- Python compilation and `git diff --check` pass. Release image build and deployment are pending.
 - No unit/integration test suite was added or run in this workstream.
 
 ## Next action
