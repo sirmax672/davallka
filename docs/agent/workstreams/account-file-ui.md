@@ -9,7 +9,7 @@ Refresh the browser UI while retaining its dark background and cyan accent. Move
 - Branch / base: `master` / current project baseline
 - Worktree: primary checkout
 - PR / issue: none
-- Exact resume commit: pending
+- Exact resume commit: `903d2064912e5cfee31529d31b534163df4741aa`
 
 ## Current state
 
@@ -17,9 +17,9 @@ The home page uses a compact upload panel, path breadcrumbs, a responsive file l
 
 ## Verified results
 
-- Python syntax compilation passed for `app.py` and `oidc_sessions.py`; rerun after final edits.
-- `git diff --check` passed before the latest template changes; rerun after editing.
-- The local Python environment does not include Jinja2, so template parsing remains to be checked in the release image before rollout.
+- Python syntax compilation passed for `app.py` and `oidc_sessions.py`.
+- Jinja parsed the shared base, file manager and settings templates in the release image.
+- `git diff --check` passed.
 - No tests were added or run.
 
 ## Findings, decisions and blockers
@@ -28,4 +28,4 @@ The OIDC subject remains an internal authorization key. MCP setup details are no
 
 ## Next action
 
-Recheck Python syntax and the intended diff, parse templates with the release image, then finish the authorized release while preserving the existing catalog, blobs, legacy assets and runtime settings. Keep operational details in private project memory.
+No remaining code work. Keep deployment details and runbooks in private project memory.
