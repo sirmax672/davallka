@@ -70,7 +70,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .brand-tagline { margin: 2px 0 0 44px; color: var(--muted); font-size: 12px; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
 
-.settings-link, .login-link {
+.login-link {
     display: inline-flex;
     min-height: 40px;
     align-items: center;
@@ -83,10 +83,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
     text-decoration: none;
     transition: color .16s ease, background .16s ease, border-color .16s ease;
 }
-.settings-link svg { width: 17px; height: 17px; }
-.settings-link:hover, .login-link:hover { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
-.settings-link svg, .menu-link svg, .chevron { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.settings-link svg path:first-child, .menu-link svg path:first-child { fill: none; }
+.login-link:hover { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
+.menu-link svg, .chevron { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.menu-link svg path:first-child { fill: none; }
 .login-link { color: #071216; background: var(--accent); font-weight: 600; }
 .login-link:hover { color: #071216; background: #38d7f5; border-color: transparent; }
 
@@ -323,8 +322,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
     .brand { font-size: 17px; }
     .brand-logo { width: 30px; height: 30px; }
     .brand-tagline { margin-left: 40px; font-size: 10px; }
-    .settings-link { width: 40px; padding: 0; }
-    .settings-link span { display: none; }
     .account-label { max-width: 110px; }
     .page-content { padding-top: 24px; }
     .page-heading { align-items: flex-start; flex-direction: column; }
