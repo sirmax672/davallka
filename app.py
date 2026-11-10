@@ -16,7 +16,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -45,25 +45,24 @@ def safe_local_redirect(target):
     return target
 
 
-def oauth_callback_origin(uri):
-    """Build one CSP source from a registered HTTP(S) callback, never its query."""
+def validate_oauth_callback(uri):
+    """Check that a registered callback is safe to use as a browser link."""
     parts = urlsplit(uri)
     host = parts.hostname or ""
-    if parts.scheme not in {"https", "http"} or parts.username or parts.password:
+    if parts.scheme not in {"https", "http"} or parts.username or parts.password or parts.fragment:
         raise ValueError("Invalid OAuth callback origin")
     if parts.scheme == "http" and host not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("HTTP callbacks must be loopback addresses")
     if ":" in host:
         from ipaddress import IPv6Address
 
-        host = "[" + str(IPv6Address(host)) + "]"
+        IPv6Address(host)
     else:
         host = host.encode("idna").decode("ascii").lower()
         labels = host.rstrip(".").split(".")
         if not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels):
             raise ValueError("Invalid OAuth callback hostname")
-    port = f":{parts.port}" if parts.port is not None else ""
-    return f"{parts.scheme}://{host}{port}"
+    _ = parts.port  # urllib validates the port when it is accessed.
 
 
 def create_app(test_config=None):
@@ -358,11 +357,7 @@ def create_app(test_config=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        form_action = "'self'"
-        if getattr(g, "oauth_callback_origin", None):
-            # Chromium applies form-action to redirects following a form POST.
-            form_action += " " + g.oauth_callback_origin
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action " + form_action
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         if not request.path.startswith(("/view/", "/download/", "/static/")):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -525,7 +520,7 @@ def create_app(test_config=None):
             return render_template("oauth_unavailable.html"), 410
         details, client = pending
         try:
-            g.oauth_callback_origin = oauth_callback_origin(details["redirect_uri"])
+            validate_oauth_callback(details["redirect_uri"])
         except (ValueError, UnicodeError):
             abort(400, "The registered OAuth callback is invalid")
         if request.method == "POST":
@@ -535,7 +530,8 @@ def create_app(test_config=None):
             callback = oauth.finish_consent(pending_id, current_user.get_id(), decision == "approve")
             if not callback:
                 return render_template("oauth_unavailable.html"), 410
-            return redirect(callback, code=303)
+            # End the form navigation before opening the client's callback.
+            return render_template("oauth_return.html", callback=callback)
         scope_labels = {
             "images:manage": "View, upload, rename, move, delete and restore images",
             "offline_access": "Keep this connection active by refreshing its access token",

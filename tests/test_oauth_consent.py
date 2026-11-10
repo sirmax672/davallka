@@ -1,4 +1,5 @@
 import asyncio
+from html import unescape
 import os
 from pathlib import Path
 import re
@@ -14,7 +15,7 @@ from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from werkzeug.serving import make_server
 
-from app import User, create_app, oauth_callback_origin
+from app import User, create_app, validate_oauth_callback
 
 
 @pytest.fixture
@@ -74,7 +75,16 @@ def form_action(response):
     return response.headers["Content-Security-Policy"].split("form-action ", 1)[1]
 
 
-def test_consent_survives_login_and_allows_registered_callback_only(consent_app):
+def callback_url(response):
+    assert response.status_code == 200
+    assert "Location" not in response.headers
+    assert form_action(response) == "'self'"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    return unescape(re.search(r'id="oauthCallback" href="([^"]+)"', response.text)[1])
+
+
+def test_consent_survives_login_and_returns_to_registered_callback(consent_app):
     provider = consent_app.extensions["oauth_state"]
     client, path = pending_request(consent_app)
     browser = consent_app.test_client()
@@ -89,11 +99,10 @@ def test_consent_survives_login_and_allows_registered_callback_only(consent_app)
     assert response.location == path
     consent = browser.get(path)
     assert consent.status_code == 200
-    assert form_action(consent) == "'self' https://client.example.test"
+    assert form_action(consent) == "'self'"
     assert form_action(browser.get("/")) == "'self'"
     response = browser.post(path, data={"csrf_token": csrf(consent), "decision": "approve"})
-    assert response.status_code == 303
-    callback = urlsplit(response.location)
+    callback = urlsplit(callback_url(response))
     values = parse_qs(callback.query)
     assert callback.netloc == "client.example.test"
     assert values["state"] == ["fixture-state"]
@@ -117,10 +126,11 @@ def test_denial_returns_to_callback_without_issuing_code(consent_app):
     browser = consent_app.test_client()
     sign_in(browser)
     consent = browser.get(path)
-    assert form_action(consent) == "'self' http://127.0.0.1:54321"
+    assert form_action(consent) == "'self'"
     response = browser.post(path, data={"csrf_token": csrf(consent), "decision": "deny"})
-    assert response.status_code == 303
-    assert parse_qs(urlsplit(response.location).query)["error"] == ["access_denied"]
+    callback = urlsplit(callback_url(response))
+    assert callback.netloc == "127.0.0.1:54321"
+    assert parse_qs(callback.query)["error"] == ["access_denied"]
     with provider.connection() as db:
         assert db.execute("SELECT count(*) FROM oauth_codes").fetchone()[0] == 0
 
@@ -153,22 +163,22 @@ def test_consent_still_requires_csrf(consent_app):
     assert provider.pending_consent(path.rsplit("/", 1)[1]) is not None
 
 
-@pytest.mark.parametrize(("uri", "expected"), [
-    ("https://client.example.test/path?q=ignored;form-action=*", "https://client.example.test"),
-    ("http://localhost:54321/callback", "http://localhost:54321"),
-    ("http://[::1]:54321/callback", "http://[::1]:54321"),
+@pytest.mark.parametrize("uri", [
+    "https://client.example.test/path?q=ignored;form-action=*",
+    "http://localhost:54321/callback",
+    "http://[::1]:54321/callback",
 ])
-def test_callback_csp_origin_omits_path_and_query(uri, expected):
-    assert oauth_callback_origin(uri) == expected
+def test_callback_validator_accepts_https_and_http_loopback(uri):
+    validate_oauth_callback(uri)
 
 
 @pytest.mark.parametrize("uri", [
     "http://remote.example.test/callback", "https://user:password@client.example.test/callback",
     "https://client.example.test;form-action=*/callback", "javascript:alert(1)",
 ])
-def test_callback_csp_origin_rejects_unsafe_sources(uri):
+def test_callback_validator_rejects_unsafe_destinations(uri):
     with pytest.raises(ValueError):
-        oauth_callback_origin(uri)
+        validate_oauth_callback(uri)
 
 
 def chromium_binary():
@@ -181,7 +191,7 @@ def chromium_binary():
 
 @pytest.mark.skipif(chromium_binary() is None, reason="Chromium is not installed")
 def test_chromium_consent_redirect(consent_app, tmp_path):
-    """A fresh headless profile must follow the form redirect to another origin."""
+    """A callback may redirect to an origin outside the consent form policy."""
     callback_seen = threading.Event()
 
     def callback(environ, start_response):
@@ -192,7 +202,13 @@ def test_chromium_consent_redirect(consent_app, tmp_path):
         return [b"<html><body>CALLBACK_OK</body></html>"]
 
     callback_server = make_server("127.0.0.1", 0, callback, threaded=True)
-    _, path = pending_request(consent_app, f"http://127.0.0.1:{callback_server.server_port}/callback")
+
+    def canonical_redirect(environ, start_response):
+        target = f"http://127.0.0.1:{callback_server.server_port}/callback?{environ['QUERY_STRING']}"
+        return redirect(target, code=308)(environ, start_response)
+
+    redirect_server = make_server("127.0.0.1", 0, canonical_redirect, threaded=True)
+    _, path = pending_request(consent_app, f"http://127.0.0.1:{redirect_server.server_port}/callback")
 
     @consent_app.get("/__fixture_signin")
     def fixture_signin():
@@ -207,7 +223,7 @@ def test_chromium_consent_redirect(consent_app, tmp_path):
         return response
 
     browser_server = make_server("127.0.0.1", 0, consent_app, threaded=True)
-    servers = [callback_server, browser_server]
+    servers = [callback_server, redirect_server, browser_server]
     for server in servers:
         threading.Thread(target=server.serve_forever, daemon=True).start()
     try:

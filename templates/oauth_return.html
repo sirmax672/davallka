@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Returning to your MCP client · d'Avallka</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+    <main class="guest-card">
+        <p class="eyebrow">MCP connection</p>
+        <h1>Returning to your MCP client</h1>
+        <p>If the client does not open automatically, use the link below.</p>
+        <a class="button" id="oauthCallback" href="{{ callback }}">Continue to client</a>
+    </main>
+    <script>
+        window.location.replace(document.getElementById('oauthCallback').href);
+    </script>
+</body>
+</html>
